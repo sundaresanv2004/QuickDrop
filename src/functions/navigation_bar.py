@@ -1,19 +1,16 @@
 import flet as ft
 
-from ..pages.explore import explore_page
-from ..pages.settings import settings_page
 
 
-def set_navigation_bar(page: ft.Page, main_content: ft.Column) -> ft.NavigationBar:
+def set_navigation_bar(page: ft.Page) -> ft.NavigationBar:
 
     async def on_option(e) -> None:
         selected_index = e.data
-        main_content.controls.clear()
 
         if selected_index == '0':
-            await explore_page(page, main_content)
+            page.go('/')
         elif selected_index == '1':
-            await settings_page(page, main_content)
+            page.go('/settings')
 
 
     return ft.NavigationBar(

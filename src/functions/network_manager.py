@@ -11,13 +11,15 @@ SERVER_PORT = 8585
 
 
 class NetworkManager:
-    def __init__(self, page: ft.Page, ui_update_callback: Callable):
-        self.browser = None
+    def __init__(self, page: ft.Page, ui_update_callback: Callable | None):
         self.page = page
         self.ui_update_callback = ui_update_callback
         self.zeroconf = Zeroconf()
         self.discovered_devices: Dict[str, ServiceInfo] = {}
         self.device_name = ""
+        self._is_running = False
+        self.browser = None
+        self.my_service_name = None
 
     def _get_local_ip(self) -> str:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -29,6 +31,9 @@ class NetworkManager:
         finally:
             s.close()
         return ip
+
+    def is_running(self) -> bool:  # Add this new helper method
+        return self._is_running
 
     class ZeroconfListener:
         def __init__(self, manager_instance):
@@ -54,11 +59,12 @@ class NetworkManager:
         """Starts advertising this device and browsing for others."""
         from ..functions import device_info
         self.device_name = await device_info.get_device_name(self.page)
+        self.my_service_name = f"{self.device_name}.{SERVICE_TYPE}"
 
         local_ip = self._get_local_ip()
         service_info = ServiceInfo(
             SERVICE_TYPE,
-            name=f"{self.device_name}.{SERVICE_TYPE}",
+            name=self.my_service_name,
             addresses=[socket.inet_aton(local_ip)],
             port=SERVER_PORT,
             properties={'device_name': self.device_name, 'os': self.page.platform}
@@ -71,6 +77,7 @@ class NetworkManager:
             allow_name_change=True
         )
         await loop.run_in_executor(None, register_task)
+        self._is_running = True
 
         print(f"Registered service for {self.device_name} at {self.page.platform}:{SERVER_PORT}")
 
@@ -83,3 +90,4 @@ class NetworkManager:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.zeroconf.unregister_all_services)
         await loop.run_in_executor(None, self.zeroconf.close)
+        self._is_running = False

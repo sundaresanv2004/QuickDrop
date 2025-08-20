@@ -1,7 +1,7 @@
 import flet as ft
 
-from src.pages.explore import explore_page
-from src.pages.settings import settings_page
+from ..pages.explore import explore_page
+from ..pages.settings import settings_page
 
 
 def set_navigation_bar(page: ft.Page, main_content: ft.Column) -> ft.NavigationBar:
@@ -14,8 +14,6 @@ def set_navigation_bar(page: ft.Page, main_content: ft.Column) -> ft.NavigationB
             explore_page(page, main_content)
         elif selected_index == '1':
             settings_page(page, main_content)
-
-        page.update()
 
 
     return ft.NavigationBar(

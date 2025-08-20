@@ -5,7 +5,7 @@ description = ""
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-  "flet==0.25.1"
+  "flet==0.28.3"
 ]
 
 
@@ -25,4 +25,5 @@ company = "Flet"
 copyright = "Copyright (C) 2024 by Sundaresan V"
 
 [tool.flet.app]
-path = "src"
+path = "."
+assets_dir = "src/assets"

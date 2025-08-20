@@ -1,7 +1,7 @@
 import flet as ft
 
-from functions import theme, navigation_bar
-from pages.explore import explore_page
+from src.functions import theme, navigation_bar
+from src.pages.explore import explore_page
 
 
 def main(page: ft.Page):
@@ -31,5 +31,5 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     ft.app(
         target=main,
-        # assets_dir="assets" # Uncomment if you add assets
+        assets_dir="src/assets"
     )

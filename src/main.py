@@ -1,26 +1,34 @@
 import flet as ft
 
+from functions import theme, navigation_bar
+from pages.explore import explore_page
+
 
 def main(page: ft.Page):
-    counter = ft.Text("0", size=50, data=0)
+    page.title = "Quick Drop "
+    page.window.center()
+    page.window.maximized = True
 
-    def increment_click(e):
-        counter.data += 1
-        counter.value = str(counter.data)
-        counter.update()
+    theme.set_theme(page)
 
-    page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.Icons.ADD, on_click=increment_click
+    main_content = ft.Column(
+        scroll=ft.ScrollMode.ADAPTIVE,
+        expand=True
     )
+
+    page.navigation_bar = navigation_bar.set_navigation_bar()
+
     page.add(
         ft.SafeArea(
-            ft.Container(
-                counter,
-                alignment=ft.alignment.center,
-            ),
+            main_content,
             expand=True,
         )
     )
 
+    explore_page(page, main_content)
 
-ft.app(main)
+
+if __name__ == "__main__":
+    ft.app(
+        target=main,
+    )

@@ -1,11 +1,25 @@
 import flet as ft
 
+from src.pages.explore import explore_page
+from src.pages.settings import settings_page
 
-def set_navigation_bar() -> ft.NavigationBar:
+
+def set_navigation_bar(page: ft.Page, main_content: ft.Column) -> ft.NavigationBar:
+
     def on_option(e) -> None:
-        print(e.data)
+        selected_index = e.data
+        main_content.controls.clear()
+
+        if selected_index == '0':
+            explore_page(page, main_content)
+        elif selected_index == '1':
+            settings_page(page, main_content)
+
+        page.update()
+
 
     return ft.NavigationBar(
+        selected_index=0,
         destinations=[
             ft.NavigationBarDestination(
                 icon=ft.Icons.EXPLORE_OUTLINED,

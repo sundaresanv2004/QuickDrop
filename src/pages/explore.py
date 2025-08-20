@@ -1,7 +1,4 @@
 import flet as ft
-import os
-import socket
-import platform
 
 
 def explore_page(page: ft.Page, main_content: ft.Column) -> None:
@@ -14,18 +11,8 @@ def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             ),
             ft.ListTile(
                 leading=ft.Icon(ft.Icons.INFO_OUTLINE),
-                title=ft.Text("Working Dir"),
-                subtitle=ft.Text(f"{os.getcwd()}"),
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.INFO_OUTLINE),
-                title=ft.Text("System Name"),
-                subtitle=ft.Text(f"{socket.gethostname()}"),
-            ),
-            ft.ListTile(
-                leading=ft.Icon(ft.Icons.INFO_OUTLINE),
                 title=ft.Text("OS Type"),
-                subtitle=ft.Text(f"{platform.system()}"),
+                subtitle=ft.Text(f"{page.platform}"),
             ),
         ]
     )
@@ -50,8 +37,5 @@ def explore_page(page: ft.Page, main_content: ft.Column) -> None:
         )
     )
 
-    main_content.controls = [
-        content
-    ]
-
+    main_content.controls = [content]
     page.update()

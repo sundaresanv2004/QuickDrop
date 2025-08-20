@@ -6,7 +6,7 @@ from ..functions.theme import update_theme
 APP_VERSION = "0.1.0-alpha"
 
 
-def settings_page(page: ft.Page, main_content: ft.Column) -> None:
+async def settings_page(page: ft.Page, main_content: ft.Column) -> None:
     def get_directory_result(e: ft.FilePickerResultEvent):
         if e.path:
             page.client_storage.set("download_path", e.path)
@@ -17,10 +17,11 @@ def settings_page(page: ft.Page, main_content: ft.Column) -> None:
     directory_picker = ft.FilePicker(on_result=get_directory_result)
     page.overlay.append(directory_picker)
 
-    device_name_text = ft.Text(device_info.get_device_name(page))
+    device_name_text = ft.Text(await device_info.get_device_name(page))
+    download_path_value = await page.client_storage.get_async("download_path")
     download_path_text = ft.Text(
-        page.client_storage.get("download_path") or "Default (Downloads Folder)",
-        italic=not page.client_storage.contains_key("download_path")
+        value=download_path_value or "Default (Downloads Folder)",
+        italic=not download_path_value
     )
 
     def on_name_saved(new_name: str):

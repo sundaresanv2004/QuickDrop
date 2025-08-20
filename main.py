@@ -4,10 +4,19 @@ from src.functions import theme, navigation_bar
 from src.pages.explore import explore_page
 
 
-def main(page: ft.Page):
+async def main(page: ft.Page):
     page.title = "Quick Drop"
     page.window.center()
     page.window.maximized = True
+
+    async def window_event(e):
+        if e.data == "close":
+            nm = page.session.get("network_manager")
+            if nm:
+                await nm.stop_async()
+            page.window.destroy()
+
+    page.on_window_event = window_event
 
     theme.set_theme(page)
 
@@ -25,7 +34,7 @@ def main(page: ft.Page):
         )
     )
 
-    explore_page(page, main_content)
+    await explore_page(page, main_content)
 
 
 if __name__ == "__main__":

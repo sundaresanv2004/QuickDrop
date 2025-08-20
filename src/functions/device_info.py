@@ -15,9 +15,9 @@ def _generate_random_name() -> str:
     noun = random.choice(NOUNS)
     return f"{adj} {noun}"
 
-def get_device_name(page: ft.Page) -> str:
-    device_name = page.client_storage.get("device_name")
+async def get_device_name(page: ft.Page) -> str:
+    device_name = await page.client_storage.get_async("device_name")
     if not device_name:
         device_name = _generate_random_name()
-        page.client_storage.set("device_name", device_name)
+        await page.client_storage.set_async("device_name", device_name)
     return device_name

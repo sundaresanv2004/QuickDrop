@@ -22,7 +22,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
         my_device_name = network_manager.device_name
 
         page.snack_bar = ft.SnackBar(ft.Text(f"Sending chat request to {device_info['name']}..."), open=True)
-        await page.update()
+        page.update()
 
         session = aiohttp.ClientSession()
         try:
@@ -43,7 +43,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
                     page.session.set("active_ws_connection", ws)
                     page.session.set("aiohttp_session", session)
                     await page.client_storage.set_async("chat_target_info", device_info)
-                    page.go("/chat")
+                    await page.go("/chat")
                     return
 
                 elif response.get("type") == "chat_declined":
@@ -73,8 +73,6 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             raw_os = info.properties.get(b'os', b'unknown').decode('utf-8')
             device_os = raw_os.replace("PagePlatform.", "").capitalize()
 
-            # --- THIS IS THE FIX ---
-            # Corrected the typo from inet_oa to inet_ntoa
             ip_address = socket.inet_ntoa(info.addresses[0])
 
             current_device_info = {"ip": ip_address, "name": device_name}

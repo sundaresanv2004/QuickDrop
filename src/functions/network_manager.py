@@ -23,6 +23,7 @@ class NetworkManager:
         self._is_running = False
         self.browser = None
         self.my_service_name = None
+        self.runner = None
 
     def _get_local_ip(self) -> str:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -57,17 +58,11 @@ class NetworkManager:
     async def start_server_async(self):
         app = web.Application()
         app.router.add_get('/ws', self._websocket_handler)
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', SERVER_PORT)
-
-        try:
-            await site.start()
-            print(f"Started WebSocket server on port {SERVER_PORT}")
-            await asyncio.Event().wait()
-        finally:
-            await runner.cleanup()
-            print("WebSocket server has been shut down.")
+        self.runner = web.AppRunner(app)
+        await self.runner.setup()
+        site = web.TCPSite(self.runner, '0.0.0.0', SERVER_PORT)
+        await site.start()
+        print(f"Started WebSocket server on port {SERVER_PORT}")
 
     class ZeroconfListener:
         def __init__(self, manager_instance):
@@ -114,7 +109,10 @@ class NetworkManager:
         print("Started browsing for other QuickDrop devices...")
 
     async def stop_async(self):
-        print("Stopping network services...")
+        if self.runner:
+            await self.runner.cleanup()
+            print("WebSocket server has been shut down.")
+
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.zeroconf.unregister_all_services)
         await loop.run_in_executor(None, self.zeroconf.close)

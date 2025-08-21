@@ -1,4 +1,6 @@
 import flet as ft
+import asyncio
+
 
 def edit_device_name_dialog(page: ft.Page, current_name: str, on_save_callback) -> None:
     device_name_field = ft.TextField(
@@ -28,4 +30,31 @@ def edit_device_name_dialog(page: ft.Page, current_name: str, on_save_callback) 
     )
 
     page.open(edit_dialog)
+    page.update()
+
+
+def chat_request_dialog(page: ft.Page, from_device: str, on_accept, on_decline) -> None:
+    def accept_clicked(e):
+        page.dialog.open = False
+        page.update()
+        asyncio.create_task(on_accept())
+
+    def decline_clicked(e):
+        page.dialog.open = False
+        page.update()
+        asyncio.create_task(on_decline())
+
+    dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Chat Request"),
+        content=ft.Text(f"{from_device} wants to chat with you."),
+        actions=[
+            ft.TextButton("Decline", on_click=decline_clicked),
+            ft.FilledButton("Accept", on_click=accept_clicked),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+
+    page.dialog = dialog
+    dialog.open = True
     page.update()

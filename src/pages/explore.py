@@ -1,6 +1,9 @@
+# explore.py (Updated)
 import flet as ft
 import asyncio
-from ..functions.network_manager import NetworkManager
+import json
+import aiohttp
+from ..functions.network_manager import NetworkManager, SERVER_PORT
 import socket
 
 
@@ -9,13 +12,59 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
         controls=[ft.ProgressRing()]
     )
 
-    async def navigate_to_chat(e: ft.ControlEvent):
+    async def request_chat(e: ft.ControlEvent):
         device_info = e.control.data
-        if device_info:
-            await page.client_storage.set_async("chat_target_info", device_info)
-            page.go("/chat")
+        if not device_info:
+            return
+
+        target_ip = device_info['ip']
+        network_manager: NetworkManager = page.session.get("network_manager")
+        my_device_name = network_manager.device_name
+
+        page.snack_bar = ft.SnackBar(ft.Text(f"Sending chat request to {device_info['name']}..."), open=True)
+        page.update()
+
+        session = aiohttp.ClientSession()
+        try:
+            ws = await session.ws_connect(f"http://{target_ip}:{SERVER_PORT}/ws")
+
+            request_message = {
+                "type": "chat_request",
+                "from_device": my_device_name,
+                "device_info": {"name": my_device_name, "ip": network_manager._get_local_ip()}
+            }
+            await ws.send_str(json.dumps(request_message))
+
+            print("Waiting for chat response...")
+            async for msg in ws:
+                response = json.loads(msg.data)
+                if response.get("type") == "chat_accepted":
+                    print("Chat request accepted!")
+                    page.session.set("active_ws_connection", ws)  # Store connection
+                    page.session.set("aiohttp_session", session)  # Store session
+                    await page.client_storage.set_async("chat_target_info", device_info)
+                    page.go("/chat")
+                    return  # Exit the function successfully
+
+                elif response.get("type") == "chat_declined":
+                    print("Chat request declined.")
+                    page.snack_bar = ft.SnackBar(ft.Text("Chat request declined."), open=True)
+                    page.update()
+                    break
+
+            # If the loop finishes without navigating, the chat was declined or closed
+            await ws.close()
+            await session.close()
+
+        except Exception as ex:
+            print(f"Error sending chat request: {ex}")
+            page.snack_bar = ft.SnackBar(ft.Text(f"Could not connect to {device_info['name']}."), open=True)
+            await page.update_async()
+            if not session.closed:
+                await session.close()
 
     def update_ui_with_devices(devices: dict):
+        network_manager: NetworkManager = page.session.get("network_manager")
         device_tiles = []
         for name, info in devices.items():
             if name == network_manager.my_service_name:
@@ -26,10 +75,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             device_os = raw_os.replace("PagePlatform.", "").capitalize()
             ip_address = socket.inet_ntoa(info.addresses[0])
 
-            current_device_info = {
-                "ip": ip_address,
-                "name": device_name
-            }
+            current_device_info = {"ip": ip_address, "name": device_name}
 
             device_tiles.append(
                 ft.ListTile(
@@ -38,7 +84,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
                     title=ft.Text(device_name),
                     subtitle=ft.Text(f"{device_os} - {ip_address}"),
                     data=current_device_info,
-                    on_click=navigate_to_chat
+                    on_click=request_chat
                 )
             )
 
@@ -53,8 +99,8 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             )
         else:
             device_list_view.controls.extend(device_tiles)
-
-        page.update()
+        if page:
+            page.update()
 
     network_manager: NetworkManager = page.session.get("network_manager")
     network_manager.ui_update_callback = update_ui_with_devices
@@ -79,4 +125,3 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
 
     main_content.controls.clear()
     main_content.controls.append(content)
-    page.update()

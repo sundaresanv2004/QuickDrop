@@ -1,10 +1,12 @@
+# src/functions/network_manager.py (Corrected and Final)
 import flet as ft
 import asyncio
 import socket
+import json
 from zeroconf import ServiceBrowser, Zeroconf, ServiceInfo
 from typing import Dict, Callable
 from functools import partial
-
+from aiohttp import web  # Import aiohttp web
 
 SERVICE_TYPE = "_quickdrop._tcp.local."
 SERVER_PORT = 8585
@@ -21,6 +23,9 @@ class NetworkManager:
         self.browser = None
         self.my_service_name = None
 
+        # This callback will be dynamically changed by the UI (main page vs. chat page)
+        self.message_handler_callback = None
+
     def _get_local_ip(self) -> str:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -32,8 +37,44 @@ class NetworkManager:
             s.close()
         return ip
 
-    def is_running(self) -> bool:  # Add this new helper method
+    def is_running(self) -> bool:
         return self._is_running
+
+    async def _websocket_handler(self, request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        print("WebSocket connection opened on server.")
+
+        # The server's main job is to listen and route messages
+        # to whatever the current handler is.
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                print(f"Server received raw message: {msg.data}")
+                if self.message_handler_callback:
+                    # Pass the message and the connection object to the current handler
+                    await self.message_handler_callback(json.loads(msg.data), ws)
+            elif msg.type == web.WSMsgType.ERROR:
+                print(f'Server WebSocket connection closed with exception {ws.exception()}')
+
+        print('Server WebSocket connection closed.')
+        return ws
+
+    async def start_server_async(self):
+        """Starts the aiohttp server to listen for WebSocket connections."""
+        app = web.Application()
+        app.router.add_get('/ws', self._websocket_handler)  # Our websocket endpoint
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', SERVER_PORT)
+
+        try:
+            await site.start()
+            print(f"Started WebSocket server on port {SERVER_PORT}")
+            await asyncio.Event().wait()
+        finally:
+            await runner.cleanup()
+            print("WebSocket server has been shut down.")
 
     class ZeroconfListener:
         def __init__(self, manager_instance):
@@ -41,13 +82,13 @@ class NetworkManager:
 
         def remove_service(self, zeroconf, type, name):
             print(f"Device left: {name}")
-            if name in self.manager.discovered_devices:
+            if name in self.manager.discovered_devices and self.manager.ui_update_callback:
                 del self.manager.discovered_devices[name]
                 self.manager.ui_update_callback(self.manager.discovered_devices)
 
         def add_service(self, zeroconf, type, name):
             info = zeroconf.get_service_info(type, name)
-            if info:
+            if info and self.manager.ui_update_callback:
                 print(f"Device found: {name}, info: {info}")
                 self.manager.discovered_devices[name] = info
                 self.manager.ui_update_callback(self.manager.discovered_devices)
@@ -79,7 +120,7 @@ class NetworkManager:
         await loop.run_in_executor(None, register_task)
         self._is_running = True
 
-        print(f"Registered service for {self.device_name} at {self.page.platform}:{SERVER_PORT}")
+        print(f"Registered service for {self.device_name}")
 
         self.browser = ServiceBrowser(self.zeroconf, SERVICE_TYPE, self.ZeroconfListener(self))
         print("Started browsing for other QuickDrop devices...")

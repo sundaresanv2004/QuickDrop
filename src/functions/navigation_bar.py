@@ -1,7 +1,6 @@
 import flet as ft
 
 
-
 def set_navigation_bar(page: ft.Page) -> ft.NavigationBar:
 
     async def on_option(e) -> None:

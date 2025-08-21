@@ -1,4 +1,4 @@
-# main.py (Updated)
+# main.py (Corrected and Final)
 import asyncio
 import flet as ft
 import json
@@ -16,20 +16,20 @@ async def main(page: ft.Page):
     page.window.center()
     page.window.maximized = True
 
-    network_manager = NetworkManager(page, ui_update_callback=None)
+    network_manager = NetworkManager(page)
     page.session.set("network_manager", network_manager)
+
+    server_task = None
 
     async def handle_incoming_message(data: dict, ws):
         message_type = data.get("type")
 
         if message_type == "chat_request":
             async def accept_action():
-                page.session.set("active_ws_connection", ws)
-
                 await page.client_storage.set_async("chat_target_info", data.get("device_info"))
                 response = {"type": "chat_accepted", "from_device": network_manager.device_name}
                 await ws.send_str(json.dumps(response))
-                page.go("/chat")
+                await page.go("/chat")
 
             async def decline_action():
                 response = {"type": "chat_declined"}
@@ -43,10 +43,13 @@ async def main(page: ft.Page):
             )
 
     network_manager.message_handler_callback = handle_incoming_message
-    asyncio.create_task(network_manager.start_server_async())
+
+    server_task = asyncio.create_task(network_manager.start_server_async())
 
     async def window_event(e):
         if e.data == "close":
+            if server_task:
+                server_task.cancel()
             await network_manager.stop_async()
             await asyncio.sleep(0.5)
             page.window.destroy()
@@ -59,18 +62,12 @@ async def main(page: ft.Page):
         scroll=ft.ScrollMode.ADAPTIVE,
         expand=True
     )
-
-    page.add(
-        ft.SafeArea(
-            main_content,
-            expand=True,
-        )
-    )
+    page.add(ft.SafeArea(main_content, expand=True))
 
     async def route_change(route):
         print(f"Route changed to: {page.route}")
         page.appbar = None
-        main_content.controls.clear()  # Clear content on every route change
+        main_content.controls.clear()
 
         if page.route == "/":
             page.navigation_bar.visible = True
@@ -86,6 +83,7 @@ async def main(page: ft.Page):
         page.update()
 
     page.on_route_change = route_change
+
     page.go("/")
 
 

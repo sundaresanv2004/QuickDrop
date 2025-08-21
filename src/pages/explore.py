@@ -1,4 +1,3 @@
-# explore.py (Updated)
 import flet as ft
 import asyncio
 import json
@@ -40,11 +39,11 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
                 response = json.loads(msg.data)
                 if response.get("type") == "chat_accepted":
                     print("Chat request accepted!")
-                    page.session.set("active_ws_connection", ws)  # Store connection
-                    page.session.set("aiohttp_session", session)  # Store session
+                    page.session.set("active_ws_connection", ws)
+                    page.session.set("aiohttp_session", session)
                     await page.client_storage.set_async("chat_target_info", device_info)
                     page.go("/chat")
-                    return  # Exit the function successfully
+                    return
 
                 elif response.get("type") == "chat_declined":
                     print("Chat request declined.")
@@ -52,14 +51,13 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
                     page.update()
                     break
 
-            # If the loop finishes without navigating, the chat was declined or closed
             await ws.close()
             await session.close()
 
         except Exception as ex:
             print(f"Error sending chat request: {ex}")
             page.snack_bar = ft.SnackBar(ft.Text(f"Could not connect to {device_info['name']}."), open=True)
-            await page.update_async()
+            page.update()
             if not session.closed:
                 await session.close()
 
@@ -73,7 +71,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             device_name = info.properties.get(b'device_name', b'Unknown Device').decode('utf-8')
             raw_os = info.properties.get(b'os', b'unknown').decode('utf-8')
             device_os = raw_os.replace("PagePlatform.", "").capitalize()
-            ip_address = socket.inet_ntoa(info.addresses[0])
+            ip_address = socket.inet_oa(info.addresses[0])
 
             current_device_info = {"ip": ip_address, "name": device_name}
 

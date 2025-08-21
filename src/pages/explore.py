@@ -1,3 +1,4 @@
+# src/pages/explore.py (Corrected)
 import flet as ft
 import asyncio
 import json
@@ -21,7 +22,7 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
         my_device_name = network_manager.device_name
 
         page.snack_bar = ft.SnackBar(ft.Text(f"Sending chat request to {device_info['name']}..."), open=True)
-        page.update()
+        await page.update()
 
         session = aiohttp.ClientSession()
         try:
@@ -71,7 +72,10 @@ async def explore_page(page: ft.Page, main_content: ft.Column) -> None:
             device_name = info.properties.get(b'device_name', b'Unknown Device').decode('utf-8')
             raw_os = info.properties.get(b'os', b'unknown').decode('utf-8')
             device_os = raw_os.replace("PagePlatform.", "").capitalize()
-            ip_address = socket.inet_oa(info.addresses[0])
+
+            # --- THIS IS THE FIX ---
+            # Corrected the typo from inet_oa to inet_ntoa
+            ip_address = socket.inet_ntoa(info.addresses[0])
 
             current_device_info = {"ip": ip_address, "name": device_name}
 

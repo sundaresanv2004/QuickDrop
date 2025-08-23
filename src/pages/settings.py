@@ -27,6 +27,9 @@ async def settings_page(page: ft.Page, main_content: ft.Column) -> None:
     def on_name_saved(new_name: str):
         device_name_text.value = new_name
 
+    async def toggle_theme(e):
+        await update_theme(e, page)
+
     content_cards = [
         ft.Card(
             content=ft.Container(
@@ -40,13 +43,17 @@ async def settings_page(page: ft.Page, main_content: ft.Column) -> None:
                             subtitle=device_name_text,
                             trailing=ft.IconButton(
                                 icon=ft.Icons.EDIT_OUTLINED,
-                                on_click=lambda _: edit_device_name_dialog(page, device_name_text.value, on_name_saved)),
+                                on_click=lambda _: edit_device_name_dialog(page, device_name_text.value,
+                                                                           on_name_saved)),
                         ),
                         ft.ListTile(
                             leading=ft.Icon(ft.Icons.DARK_MODE_OUTLINED),
                             title=ft.Text("Dark Mode"),
-                            trailing=ft.Switch(value=page.theme_mode == ft.ThemeMode.DARK,
-                                               on_change=lambda e: update_theme(e, page)),
+                            # --- THIS IS CHANGED ---
+                            trailing=ft.Switch(
+                                value=page.theme_mode == ft.ThemeMode.DARK,
+                                on_change=toggle_theme  # Use the new async handler
+                            ),
                         ),
                     ], spacing=0
                 ), padding=ft.padding.symmetric(vertical=10)
@@ -89,7 +96,7 @@ async def settings_page(page: ft.Page, main_content: ft.Column) -> None:
                             leading=ft.Icon(ft.Icons.FEEDBACK_OUTLINED),
                             title=ft.Text("Send Feedback"),
                             on_click=lambda _: page.launch_url(
-                                "mailto:youremail@example.com?subject=QuickDrop Feedback"),
+                                "mailto:contact@sundaresan.dev?subject=QuickDrop Feedback"),
                         ),
                     ], spacing=0
                 ), padding=ft.padding.symmetric(vertical=10)

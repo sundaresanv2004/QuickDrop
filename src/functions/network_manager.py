@@ -1,4 +1,3 @@
-# src/functions/network_manager.py (Corrected)
 import flet as ft
 import asyncio
 import socket
@@ -12,7 +11,6 @@ SERVICE_TYPE = "_quickdrop._tcp.local."
 SERVER_PORT = 8585
 
 class NetworkManager:
-    # --- FIX: The constructor was simplified to only take the page object. ---
     def __init__(self, page: ft.Page):
         self.page = page
         self.ui_update_callback: Callable | None = None
@@ -117,3 +115,4 @@ class NetworkManager:
         await loop.run_in_executor(None, self.zeroconf.unregister_all_services)
         await loop.run_in_executor(None, self.zeroconf.close)
         self._is_running = False
+        

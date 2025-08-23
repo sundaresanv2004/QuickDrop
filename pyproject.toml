@@ -3,13 +3,15 @@ name = "quickdrop"
 version = "0.1.0"
 description = ""
 readme = "README.md"
-requires-python = ">=3.8"
-dependencies = [
-  "flet==0.25.1",
-  "zeroconf==0.39.4",
-  "aiohttp==3.9.5"
+requires-python = ">=3.9"
+authors = [
+    { name = "Flet developer", email = "contact@sundaresan.dev" }
 ]
-
+dependencies = [
+    "flet==0.28.3",
+    "zeroconf==0.39.4",
+    "aiohttp==3.9.5"
+]
 
 [tool.flet]
 # org name in reverse domain name notation, e.g. "com.mycompany".
@@ -18,25 +20,34 @@ org = "dev.sundaresan"
 
 # project display name that is used as an app title on Android and iOS home screens,
 # shown in window titles and about app dialogs on desktop.
-product = "quickdrop"
+product = "Quick Drop"
+icon = "assets/icon.png"
 
 # company name to display in about app dialogs
 company = "Flet"
 
 # copyright text to display in about app dialogs
-copyright = "Copyright (C) 2024 by Sundaresan V"
+copyright = "Copyright (C) 2025 by Sundaresan V"
 
 [tool.flet.app]
 path = ""
-assets_dir = "src/assets"
+
+[tool.uv]
+dev-dependencies = [
+    "flet[all]==0.28.3",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+flet = {extras = ["all"], version = "0.28.3"}
 
 [tool.flet.android]
 permissions = [
-  "android.permission.INTERNET",
-  "android.permission.ACCESS_NETWORK_STATE",
-  "android.permission.ACCESS_WIFI_STATE",
-  "android.permission.CHANGE_WIFI_MULTICAST_STATE",
-  "android.permission.READ_EXTERNAL_STORAGE",
-  "android.permission.WRITE_EXTERNAL_STORAGE",
-  "android.permission.MANAGE_EXTERNAL_STORAGE"
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.ACCESS_WIFI_STATE",
+    "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+    "android.permission.NEARBY_WIFI_DEVICES"
 ]

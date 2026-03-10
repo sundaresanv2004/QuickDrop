@@ -3,7 +3,20 @@
 import { useState, useEffect, useCallback } from "react";
 
 const STORAGE_KEY = "quickdrop-device-name";
-const DEFAULT_NAME = "My Device";
+
+function getDefaultDeviceName(): string {
+    if (typeof window === "undefined") return "My Device";
+
+    const ua = window.navigator.userAgent;
+    if (/Mac OS X/.test(ua)) return "MacBook";
+    if (/iPhone/.test(ua)) return "iPhone";
+    if (/iPad/.test(ua)) return "iPad";
+    if (/Windows NT/.test(ua)) return "Windows PC";
+    if (/Android/.test(ua)) return "Android Device";
+    if (/Linux/.test(ua)) return "Linux PC";
+
+    return "My Device";
+}
 
 const ADJECTIVES = [
     "Swift", "Silent", "Cosmic", "Turbo", "Stealth",
@@ -24,17 +37,24 @@ function generateRandomName(): string {
 }
 
 export function useDeviceName() {
-    const [name, setName] = useState(DEFAULT_NAME);
+    const [name, setName] = useState("");
     const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
         const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) setName(stored);
+        if (stored) {
+            setName(stored);
+        } else {
+            const defaultName = getDefaultDeviceName();
+            setName(defaultName);
+            localStorage.setItem(STORAGE_KEY, defaultName);
+        }
         setLoaded(true);
     }, []);
 
     const saveName = useCallback((newName: string) => {
-        const trimmed = newName.trim() || DEFAULT_NAME;
+        const fallback = getDefaultDeviceName();
+        const trimmed = newName.trim() || fallback;
         setName(trimmed);
         localStorage.setItem(STORAGE_KEY, trimmed);
     }, []);

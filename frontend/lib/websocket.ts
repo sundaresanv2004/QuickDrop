@@ -89,8 +89,26 @@ let wsInstance: WebSocketClient | null = null;
 
 export function getWebSocket(): WebSocketClient {
     if (!wsInstance) {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const host = process.env.NEXT_PUBLIC_WS_URL || `${protocol}//localhost:8000/ws`;
+        let host = process.env.NEXT_PUBLIC_WS_URL;
+
+        if (!host) {
+            const isSecure = window.location.protocol === "https:";
+            const protocol = isSecure ? "wss:" : "ws:";
+            const hostname = window.location.hostname;
+
+            // Production Coolify Deployment
+            if (hostname.includes("sundaresan.dev")) {
+                // e.g. quickdrop.sundaresan.dev -> api-quickdrop.sundaresan.dev
+                const apiHost = hostname.replace("quickdrop", "api-quickdrop");
+                host = `${protocol}//${apiHost}/ws`;
+            }
+            // Local Development (Docker map: 8001, Native: 8000)
+            else {
+                const port = window.location.port === "3001" ? "8001" : "8000";
+                host = `${protocol}//${hostname}:${port}/ws`;
+            }
+        }
+
         wsInstance = new WebSocketClient(host);
     }
     return wsInstance;

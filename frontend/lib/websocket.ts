@@ -1,9 +1,13 @@
 // src/lib/websocket.ts
 
+import { WebRTCIncomingMessage, WebRTCSignalingMessage } from "./webrtc/peerManager";
+
 export type WebSocketMessage =
     | { type: "join"; name: string }
     | { type: "name_change"; name: string }
-    | { type: "device-list"; devices: { id: string; name: string }[] };
+    | { type: "device-list"; devices: { id: string; name: string }[] }
+    | WebRTCSignalingMessage
+    | WebRTCIncomingMessage;
 
 type MessageHandler = (message: WebSocketMessage) => void;
 

@@ -4,6 +4,7 @@ import React from "react";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ComputerIcon, SmartPhone01Icon } from "@hugeicons/core-free-icons";
 
@@ -16,10 +17,12 @@ export interface Device {
 interface AnimatedDeviceCardProps {
     device: Device;
     index: number;
+    isConnected?: boolean;
+    isPending?: boolean;
     onConnect?: (id: string) => void;
 }
 
-export function AnimatedDeviceCard({ device, index, onConnect }: AnimatedDeviceCardProps) {
+export function AnimatedDeviceCard({ device, index, isConnected, isPending, onConnect }: AnimatedDeviceCardProps) {
     return (
         <div
             className={`animate-fade-in-up`}
@@ -43,11 +46,21 @@ export function AnimatedDeviceCard({ device, index, onConnect }: AnimatedDeviceC
                 </div>
                 <Button
                     size="sm"
-                    variant="secondary"
-                    onClick={() => onConnect?.(device.id)}
+                    variant={isConnected ? "default" : "secondary"}
+                    disabled={isConnected || isPending}
+                    onClick={() => !isConnected && !isPending && onConnect?.(device.id)}
                     className="transition-all duration-200 hover:bg-primary hover:text-primary-foreground active:scale-95"
                 >
-                    Connect
+                    {isPending ? (
+                        <>
+                            <Spinner className="mr-2 h-4 w-4" />
+                            Connecting
+                        </>
+                    ) : isConnected ? (
+                        "Connected"
+                    ) : (
+                        "Connect"
+                    )}
                 </Button>
             </Card>
         </div>

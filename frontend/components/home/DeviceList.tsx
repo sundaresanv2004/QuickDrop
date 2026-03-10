@@ -6,20 +6,52 @@ import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDevices } from "@/hooks/useDevices";
 import { useDeviceName } from "@/hooks/useDeviceName";
+import { usePeerConnection } from "@/hooks/usePeerConnection";
+import { ConnectionRequestModal } from "./ConnectionRequestModal";
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 export function DeviceList() {
     const { devices, isConnected } = useDevices();
     const { name: currentDeviceName } = useDeviceName();
+    const router = useRouter();
+    const hasRedirectedRef = useRef<Set<string>>(new Set());
+    const {
+        incomingRequest,
+        connectedPeers,
+        pendingRequests,
+        sendConnectionRequest,
+        acceptConnectionRequest,
+        rejectConnectionRequest,
+    } = usePeerConnection(currentDeviceName);
 
     // Filter out our own device from the list
     const otherDevices = devices.filter(d => d.name !== currentDeviceName);
+
+    // Auto-open chat when a peer becomes connected
+    useEffect(() => {
+        if (connectedPeers.length > 0) {
+            const latestPeerId = connectedPeers[connectedPeers.length - 1];
+            // Prevent duplicate routing calls if React triple renders
+            if (!hasRedirectedRef.current.has(latestPeerId)) {
+                hasRedirectedRef.current.add(latestPeerId);
+                router.push(`/chat/${latestPeerId}`);
+            }
+        }
+    }, [connectedPeers, router]);
 
     // We consider it "scanning" if we haven't connected yet, 
     // or if we are connected but see 0 other devices (to keep the scanning illusion alive briefly)
     const isScanning = !isConnected;
 
-    const handleConnect = (id: string) => {
-        console.log(`Connecting to device ${id}...`);
+    const handleConnectTrigger = (id: string) => {
+        if (connectedPeers.includes(id)) {
+            // If already connected, push to their dedicated page route
+            router.push(`/chat/${id}`);
+        } else {
+            // Otherwise, initiate request
+            sendConnectionRequest(id);
+        }
     };
 
     return (
@@ -69,10 +101,20 @@ export function DeviceList() {
                             // We default to mobile for now as we don't track type in Phase 1
                             device={{ ...device, type: "mobile" }}
                             index={index}
-                            onConnect={handleConnect}
+                            isConnected={connectedPeers.includes(device.id)}
+                            isPending={pendingRequests.includes(device.id)}
+                            onConnect={handleConnectTrigger}
                         />
                     ))}
             </div>
+
+            <ConnectionRequestModal
+                isOpen={!!incomingRequest}
+                senderId={incomingRequest?.senderId || ""}
+                senderName={devices.find(d => d.id === incomingRequest?.senderId)?.name}
+                onAccept={acceptConnectionRequest}
+                onReject={rejectConnectionRequest}
+            />
         </div>
     );
 }

@@ -50,3 +50,15 @@ class ConnectionManager:
 
         for device_id in dead:
             self.disconnect(device_id)
+
+    async def send_personal_message(self, message: str, target_id: str) -> bool:
+        """Send a string payload to a specific connected device via its WebSocket."""
+        if target_id in self._connections:
+            ws = self._connections[target_id]
+            try:
+                await ws.send_text(message)
+                return True
+            except Exception:
+                self.disconnect(target_id)
+                await self.broadcast_device_list()
+        return False

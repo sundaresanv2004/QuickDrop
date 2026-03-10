@@ -1,28 +1,22 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { AnimatedDeviceCard, Device } from "./AnimatedDeviceCard";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const MOCK_DEVICES: Device[] = [
-    { id: "1", name: "Sundar's iPhone", type: "mobile" },
-    { id: "2", name: "Living Room iMac", type: "desktop" },
-    { id: "3", name: "iPad Pro", type: "mobile" },
-];
+import { useDevices } from "@/hooks/useDevices";
+import { useDeviceName } from "@/hooks/useDeviceName";
 
 export function DeviceList() {
-    const [devices, setDevices] = useState<Device[]>([]);
-    const [scanning, setScanning] = useState(true);
+    const { devices, isConnected } = useDevices();
+    const { name: currentDeviceName } = useDeviceName();
 
-    useEffect(() => {
-        // Simulate network scanning delay
-        const timer = setTimeout(() => {
-            setDevices(MOCK_DEVICES);
-            setScanning(false);
-        }, 1800);
-        return () => clearTimeout(timer);
-    }, []);
+    // Filter out our own device from the list
+    const otherDevices = devices.filter(d => d.name !== currentDeviceName);
+
+    // We consider it "scanning" if we haven't connected yet, 
+    // or if we are connected but see 0 other devices (to keep the scanning illusion alive briefly)
+    const isScanning = !isConnected;
 
     const handleConnect = (id: string) => {
         console.log(`Connecting to device ${id}...`);
@@ -34,21 +28,20 @@ export function DeviceList() {
                 <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
                     Discovered Devices
                 </h2>
-                {scanning && (
+                {isScanning ? (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground animate-fade-in-up">
                         <Spinner className="h-3 w-3" />
                         Scanning...
                     </div>
-                )}
-                {!scanning && (
+                ) : (
                     <span className="text-xs text-muted-foreground animate-fade-in-up">
-                        {devices.length} found
+                        {otherDevices.length} found
                     </span>
                 )}
             </div>
 
             <div className="flex flex-col gap-3">
-                {scanning && (
+                {isScanning && (
                     <div className="flex flex-col gap-3">
                         {[0, 1, 2].map((i) => (
                             <Skeleton
@@ -60,11 +53,21 @@ export function DeviceList() {
                     </div>
                 )}
 
-                {!scanning &&
-                    devices.map((device, index) => (
+                {!isScanning && otherDevices.length === 0 && (
+                    <div className="py-8 text-center text-sm text-muted-foreground border border-dashed rounded-xl border-border animate-fade-in-up">
+                        No other devices found on the network.
+                        <br />
+                        Make sure QuickDrop is open on another device.
+                    </div>
+                )}
+
+                {!isScanning &&
+                    otherDevices.map((device, index) => (
                         <AnimatedDeviceCard
                             key={device.id}
-                            device={device}
+                            // Map the backend device (id, name) to the AnimatedDeviceCard props (needs type)
+                            // We default to mobile for now as we don't track type in Phase 1
+                            device={{ ...device, type: "mobile" }}
                             index={index}
                             onConnect={handleConnect}
                         />

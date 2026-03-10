@@ -20,12 +20,16 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         raw = await websocket.receive_text()
         data = json.loads(raw)
+        
+        print(f"WS received initial message: {data}")
 
         if data.get("type") != "join" or "name" not in data:
+            print("WS rejecting: First message must be a join message")
             await websocket.close(code=1008, reason="First message must be a join message")
             return
 
         device_id = await manager.register(websocket, data["name"])
+        print(f"WS device joined: {device_id} ({data['name']})")
         await manager.broadcast_device_list()
 
         while True:
@@ -39,10 +43,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 pass
 
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        print(f"WS disconnected expectedly: {device_id}")
+    except Exception as e:
+        print(f"WS error: {e}")
     finally:
         if device_id:
+            print(f"WS removing device: {device_id}")
             manager.disconnect(device_id)
             await manager.broadcast_device_list()

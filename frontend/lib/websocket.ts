@@ -6,6 +6,11 @@ export type WebSocketMessage =
     | { type: "join"; name: string }
     | { type: "name_change"; name: string }
     | { type: "device-list"; devices: { id: string; name: string }[] }
+    | { type: "chat-request"; target?: string; sender?: string }
+    | { type: "chat-accept"; target?: string; sender?: string }
+    | { type: "chat-reject"; target?: string; sender?: string }
+    | { type: "chat-leave" }
+    | { type: "chat-update"; chat_id: string | null; participants: string[] }
     | WebRTCSignalingMessage
     | WebRTCIncomingMessage;
 

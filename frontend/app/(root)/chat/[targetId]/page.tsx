@@ -7,6 +7,7 @@ import { useChat } from "@/hooks/useChat";
 import { usePeerConnection } from "@/hooks/usePeerConnection";
 import { useDeviceName } from "@/hooks/useDeviceName";
 import { useDevices } from "@/hooks/useDevices";
+import { getPeerManager } from "@/lib/webrtc/peerManager";
 
 export default function ChatPage() {
     const params = useParams();
@@ -16,14 +17,19 @@ export default function ChatPage() {
     const { name: localDeviceId } = useDeviceName();
     const { devices } = useDevices();
     const { connectedPeers } = usePeerConnection(localDeviceId);
-    const { messages, sendMessage } = useChat(localDeviceId);
+    const { messages, sendMessage, sendFile } = useChat(localDeviceId);
 
     const [isMounted, setIsMounted] = useState(false);
 
     // Prevent hydration mismatch on client-specific WebRTC logic
     useEffect(() => {
         setIsMounted(true);
-    }, []);
+
+        // Cleanup connection when cleanly unmounting (e.g., navigating to home)
+        return () => {
+            getPeerManager().cleanup(targetId);
+        };
+    }, [targetId]);
 
     // Ensure we are actually connected to this peer, else boot back to home
     useEffect(() => {
@@ -50,6 +56,7 @@ export default function ChatPage() {
                 localDeviceId={localDeviceId}
                 messages={messages}
                 onSendMessage={(text) => sendMessage(targetId, text)}
+                onSendFile={(file) => sendFile(targetId, file)}
                 onClose={() => router.push("/")}
             />
         </div>

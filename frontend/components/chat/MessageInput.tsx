@@ -2,16 +2,26 @@ import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { SentIcon } from "@hugeicons/core-free-icons";
+import { SentIcon, Attachment01Icon } from "@hugeicons/core-free-icons";
 
 interface MessageInputProps {
     onSend: (text: string) => void;
+    onSendFile: (file: File) => void;
     disabled?: boolean;
 }
 
-export function MessageInput({ onSend, disabled }: MessageInputProps) {
+export function MessageInput({ onSend, onSendFile, disabled }: MessageInputProps) {
     const [text, setText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            onSendFile(e.target.files[0]);
+            // Reset input so the same file can be selected again
+            e.target.value = "";
+        }
+    };
 
     const handleSend = () => {
         const trimmed = text.trim();
@@ -42,6 +52,24 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
 
     return (
         <div className="flex items-end gap-2 p-4 pt-2 glass-card border-t border-border/40 mt-auto rounded-b-xl z-10 w-full relative">
+            <input
+                type="file"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                disabled={disabled}
+            />
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled}
+            >
+                <HugeiconsIcon icon={Attachment01Icon} size={22} />
+                <span className="sr-only">Attach file</span>
+            </Button>
+
             <Textarea
                 ref={textareaRef}
                 value={text}

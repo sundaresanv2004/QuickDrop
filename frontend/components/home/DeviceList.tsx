@@ -20,6 +20,7 @@ export function DeviceList() {
         incomingRequest,
         connectedPeers,
         pendingRequests,
+        activeChatId,
         sendConnectionRequest,
         acceptConnectionRequest,
         rejectConnectionRequest,
@@ -28,17 +29,16 @@ export function DeviceList() {
     // Filter out our own device from the list
     const otherDevices = devices.filter(d => d.name !== currentDeviceName);
 
-    // Auto-open chat when a peer becomes connected
+    // Auto-open chat when a chat is formed
     useEffect(() => {
-        if (connectedPeers.length > 0) {
-            const latestPeerId = connectedPeers[connectedPeers.length - 1];
+        if (activeChatId) {
             // Prevent duplicate routing calls if React triple renders
-            if (!hasRedirectedRef.current.has(latestPeerId)) {
-                hasRedirectedRef.current.add(latestPeerId);
-                router.push(`/chat/${latestPeerId}`);
+            if (!hasRedirectedRef.current.has(activeChatId)) {
+                hasRedirectedRef.current.add(activeChatId);
+                router.push(`/chat/${activeChatId}`);
             }
         }
-    }, [connectedPeers, router]);
+    }, [activeChatId, router]);
 
     // We consider it "scanning" if we haven't connected yet, 
     // or if we are connected but see 0 other devices (to keep the scanning illusion alive briefly)
@@ -103,7 +103,7 @@ export function DeviceList() {
                             index={index}
                             isConnected={connectedPeers.includes(device.id)}
                             isPending={pendingRequests.includes(device.id)}
-                            onConnect={handleConnectTrigger}
+                            onConnect={() => handleConnectTrigger(device.id)}
                         />
                     ))}
             </div>

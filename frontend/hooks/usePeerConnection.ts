@@ -12,6 +12,7 @@ export function usePeerConnection(localDeviceId: string | null) {
     const [incomingRequest, setIncomingRequest] = useState<IncomingConnectionRequest | null>(null);
     const [connectedPeers, setConnectedPeers] = useState<string[]>([]);
     const [pendingRequests, setPendingRequests] = useState<string[]>([]);
+    const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
     // Listen for WebSocket WebRTC signaling messages
     useEffect(() => {
@@ -19,14 +20,23 @@ export function usePeerConnection(localDeviceId: string | null) {
         const peerManager = getPeerManager();
 
         const unsubscribe = ws.addMessageHandler(async (message: WebSocketMessage) => {
+            if (message.type === "chat-update") {
+                setActiveChatId(message.chat_id);
+                if (message.chat_id) {
+                    setPendingRequests([]);
+                    setIncomingRequest(null);
+                }
+                return;
+            }
+
             if (!("sender" in message)) return; // Ignore non-WebRTC incoming messages from backend relay
-            const senderId = message.sender;
+            const senderId = message.sender as string;
 
             switch (message.type) {
-                case "connection-request":
+                case "chat-request":
                     setIncomingRequest({ senderId });
                     break;
-                case "connection-accept":
+                case "chat-accept":
                     // The other side accepted, start the initiator flow
                     await peerManager.createPeerConnection(senderId, true);
                     break;
@@ -40,7 +50,7 @@ export function usePeerConnection(localDeviceId: string | null) {
                 case "ice-candidate":
                     await peerManager.handleIceCandidate(senderId, message.candidate);
                     break;
-                case "connection-reject": // Assuming we add this message type
+                case "chat-reject":
                     setPendingRequests((prev) => prev.filter((id) => id !== senderId));
                     break;
             }
@@ -65,9 +75,9 @@ export function usePeerConnection(localDeviceId: string | null) {
     const sendConnectionRequest = (targetId: string) => {
         setPendingRequests((prev) => [...prev, targetId]);
         getWebSocket().send({
-            type: "connection-request",
+            type: "chat-request",
             target: targetId,
-        });
+        } as any);
     };
 
     const acceptConnectionRequest = async () => {
@@ -75,9 +85,9 @@ export function usePeerConnection(localDeviceId: string | null) {
         const senderId = incomingRequest.senderId;
 
         getWebSocket().send({
-            type: "connection-accept",
+            type: "chat-accept",
             target: senderId,
-        });
+        } as any);
 
         setIncomingRequest(null);
     };
@@ -87,7 +97,7 @@ export function usePeerConnection(localDeviceId: string | null) {
         const senderId = incomingRequest.senderId;
 
         getWebSocket().send({
-            type: "connection-reject",
+            type: "chat-reject",
             target: senderId,
         } as any);
 
@@ -98,6 +108,7 @@ export function usePeerConnection(localDeviceId: string | null) {
         incomingRequest,
         connectedPeers,
         pendingRequests,
+        activeChatId,
         sendConnectionRequest,
         acceptConnectionRequest,
         rejectConnectionRequest,

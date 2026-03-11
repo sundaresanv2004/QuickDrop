@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -5,6 +6,13 @@ class DeviceInfo(BaseModel):
     """Represents a connected device."""
     id: str
     name: str
+    active_chat_id: Optional[str] = None
+
+
+class ChatSession(BaseModel):
+    """Represents an active chat session."""
+    id: str
+    participants: list[str]
 
 
 class JoinMessage(BaseModel):

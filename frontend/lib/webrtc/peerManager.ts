@@ -17,7 +17,8 @@ export type WebRTCIncomingMessage =
     | { type: "ice-candidate"; sender: string; candidate: RTCIceCandidateInit };
 
 type PeerStateChangeHandler = (targetId: string, state: RTCPeerConnectionState) => void;
-type DataChannelMessageHandler = (targetId: string, message: string) => void;
+type DataChannelMessageHandler = (targetId: string, message: string | ArrayBuffer) => void;
+type DataChannelStateChangeHandler = (targetId: string, state: RTCDataChannelState) => void;
 
 class PeerManager {
     private peers: Map<string, RTCPeerConnection> = new Map();
@@ -25,10 +26,16 @@ class PeerManager {
 
     private stateChangeHandlers: Set<PeerStateChangeHandler> = new Set();
     private messageHandlers: Set<DataChannelMessageHandler> = new Set();
+    private dataChannelStateChangeHandlers: Set<DataChannelStateChangeHandler> = new Set();
 
     public onPeerStateChange(handler: PeerStateChangeHandler) {
         this.stateChangeHandlers.add(handler);
         return () => this.stateChangeHandlers.delete(handler);
+    }
+
+    public onDataChannelStateChange(handler: DataChannelStateChangeHandler) {
+        this.dataChannelStateChangeHandlers.add(handler);
+        return () => this.dataChannelStateChangeHandlers.delete(handler);
     }
 
     public onMessage(handler: DataChannelMessageHandler) {
@@ -40,7 +47,11 @@ class PeerManager {
         this.stateChangeHandlers.forEach((h) => h(targetId, state));
     }
 
-    private notifyMessage(targetId: string, message: string) {
+    private notifyDataChannelStateChange(targetId: string, state: RTCDataChannelState) {
+        this.dataChannelStateChangeHandlers.forEach((h) => h(targetId, state));
+    }
+
+    private notifyMessage(targetId: string, message: string | ArrayBuffer) {
         this.messageHandlers.forEach((h) => h(targetId, message));
     }
 
@@ -103,18 +114,21 @@ class PeerManager {
 
     private setupDataChannel(targetId: string, dc: RTCDataChannel) {
         this.dataChannels.set(targetId, dc);
+        dc.binaryType = "arraybuffer"; // Support sending file chunks safely
 
         dc.onopen = () => {
             console.log(`Data channel with ${targetId} is open`);
+            this.notifyDataChannelStateChange(targetId, "open");
         };
 
         dc.onmessage = (event) => {
-            console.log(`Message from ${targetId}:`, event.data);
+            // event.data can be string or ArrayBuffer
             this.notifyMessage(targetId, event.data);
         };
 
         dc.onclose = () => {
             console.log(`Data channel with ${targetId} closed`);
+            this.notifyDataChannelStateChange(targetId, "closed");
         };
     }
 
@@ -156,10 +170,10 @@ class PeerManager {
         }
     }
 
-    public sendData(targetId: string, data: string) {
+    public sendData(targetId: string, data: string | ArrayBuffer | Blob) {
         const dc = this.dataChannels.get(targetId);
         if (dc && dc.readyState === "open") {
-            dc.send(data);
+            dc.send(data as any);
             return true;
         }
         console.error(`Attempted to send data to ${targetId} but data channel is not open`);
@@ -179,6 +193,7 @@ class PeerManager {
         }
         this.peers.delete(targetId);
         this.notifyStateChange(targetId, "disconnected" as RTCPeerConnectionState);
+        this.notifyDataChannelStateChange(targetId, "closed" as RTCDataChannelState);
     }
 }
 

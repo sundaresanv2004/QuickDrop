@@ -12,6 +12,7 @@ interface ChatWindowProps {
     localDeviceId: string;
     messages: ChatMessage[];
     onSendMessage: (text: string) => void;
+    onSendFile: (file: File) => void;
     onClose?: () => void;
 }
 
@@ -21,6 +22,7 @@ export function ChatWindow({
     localDeviceId,
     messages,
     onSendMessage,
+    onSendFile,
     onClose
 }: ChatWindowProps) {
     const scrollEndRef = useRef<HTMLDivElement>(null);
@@ -85,7 +87,7 @@ export function ChatWindow({
             </ScrollArea>
 
             {/* Input Area */}
-            <MessageInput onSend={onSendMessage} />
+            <MessageInput onSend={onSendMessage} onSendFile={onSendFile} />
         </div>
     );
 }

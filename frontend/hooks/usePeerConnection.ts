@@ -6,6 +6,7 @@ import { getPeerManager } from "@/lib/webrtc/peerManager";
 
 export interface IncomingConnectionRequest {
     senderId: string;
+    isPublicJoin?: boolean;
 }
 
 export function usePeerConnection(localDeviceId: string | null) {
@@ -13,6 +14,9 @@ export function usePeerConnection(localDeviceId: string | null) {
     const [connectedPeers, setConnectedPeers] = useState<string[]>([]);
     const [pendingRequests, setPendingRequests] = useState<string[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
+    const [activeTargetId, setActiveTargetId] = useState<string | null>(null);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [chatMode, setChatMode] = useState<"private" | "public">("private");
 
     // Listen for WebSocket WebRTC signaling messages
     useEffect(() => {
@@ -25,7 +29,21 @@ export function usePeerConnection(localDeviceId: string | null) {
                 if (message.chat_id) {
                     setPendingRequests([]);
                     setIncomingRequest(null);
+                    // Identify the other participant
+                    const target = message.participants.find(p => p !== localDeviceId);
+                    setActiveTargetId(target || null);
+                    setIsAdmin(message.admin_id === localDeviceId);
+                    setChatMode(message.mode || "private");
+                } else {
+                    setActiveTargetId(null);
+                    setIsAdmin(false);
+                    setChatMode("private");
                 }
+                return;
+            }
+
+            if (message.type === "chat-mode-change") {
+                setChatMode(message.mode);
                 return;
             }
 
@@ -34,7 +52,10 @@ export function usePeerConnection(localDeviceId: string | null) {
 
             switch (message.type) {
                 case "chat-request":
-                    setIncomingRequest({ senderId });
+                    setIncomingRequest({ senderId, isPublicJoin: false });
+                    break;
+                case "public-chat-join":
+                    setIncomingRequest({ senderId, isPublicJoin: true });
                     break;
                 case "chat-accept":
                     // The other side accepted, start the initiator flow
@@ -51,6 +72,7 @@ export function usePeerConnection(localDeviceId: string | null) {
                     await peerManager.handleIceCandidate(senderId, message.candidate);
                     break;
                 case "chat-reject":
+                case "public-chat-reject":
                     setPendingRequests((prev) => prev.filter((id) => id !== senderId));
                     break;
             }
@@ -80,28 +102,59 @@ export function usePeerConnection(localDeviceId: string | null) {
         } as any);
     };
 
-    const acceptConnectionRequest = async () => {
+    const acceptConnectionRequest = async (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
         if (!incomingRequest) return;
         const senderId = incomingRequest.senderId;
 
-        getWebSocket().send({
-            type: "chat-accept",
-            target: senderId,
-        } as any);
+        if (incomingRequest.isPublicJoin) {
+            getWebSocket().send({
+                type: "public-chat-accept",
+                target: senderId,
+            } as any);
+        } else {
+            getWebSocket().send({
+                type: "chat-accept",
+                target: senderId,
+            } as any);
+        }
 
         setIncomingRequest(null);
     };
 
-    const rejectConnectionRequest = () => {
+    const rejectConnectionRequest = (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
         if (!incomingRequest) return;
         const senderId = incomingRequest.senderId;
 
-        getWebSocket().send({
-            type: "chat-reject",
-            target: senderId,
-        } as any);
+        if (incomingRequest.isPublicJoin) {
+            getWebSocket().send({
+                type: "public-chat-reject",
+                target: senderId,
+            } as any);
+        } else {
+            getWebSocket().send({
+                type: "chat-reject",
+                target: senderId,
+            } as any);
+        }
 
         setIncomingRequest(null);
+    };
+
+    const joinPublicChat = (chatId: string) => {
+        setPendingRequests((prev) => [...prev, chatId]); // Optimistic load
+        getWebSocket().send({
+            type: "public-chat-join",
+            chat_id: chatId,
+        } as any);
+    };
+
+    const changeChatMode = (mode: "private" | "public") => {
+        getWebSocket().send({
+            type: "chat-mode-change",
+            mode,
+        } as any);
     };
 
     return {
@@ -109,8 +162,13 @@ export function usePeerConnection(localDeviceId: string | null) {
         connectedPeers,
         pendingRequests,
         activeChatId,
+        activeTargetId,
+        isAdmin,
+        chatMode,
         sendConnectionRequest,
         acceptConnectionRequest,
         rejectConnectionRequest,
+        joinPublicChat,
+        changeChatMode,
     };
 }

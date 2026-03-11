@@ -5,12 +5,16 @@ import { WebRTCIncomingMessage, WebRTCSignalingMessage } from "./webrtc/peerMana
 export type WebSocketMessage =
     | { type: "join"; name: string }
     | { type: "name_change"; name: string }
-    | { type: "device-list"; devices: { id: string; name: string }[] }
+    | { type: "device-list"; devices: { id: string; name: string }[]; public_chats: { id: string; admin_name: string; participant_count: number }[] }
     | { type: "chat-request"; target?: string; sender?: string }
     | { type: "chat-accept"; target?: string; sender?: string }
     | { type: "chat-reject"; target?: string; sender?: string }
     | { type: "chat-leave" }
-    | { type: "chat-update"; chat_id: string | null; participants: string[] }
+    | { type: "chat-update"; chat_id: string | null; participants: string[]; admin_id: string | null; mode: "private" | "public" | null }
+    | { type: "chat-mode-change"; mode: "private" | "public" }
+    | { type: "public-chat-join"; chat_id: string; sender?: string }
+    | { type: "public-chat-accept"; target?: string; sender?: string }
+    | { type: "public-chat-reject"; target?: string; sender?: string }
     | WebRTCSignalingMessage
     | WebRTCIncomingMessage;
 

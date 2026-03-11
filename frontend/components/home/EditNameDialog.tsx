@@ -17,7 +17,7 @@ import { ShuffleIcon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 
 interface EditNameDialogProps {
     currentName: string;
-    onSave: (name: string) => void;
+    onSave: (name: string, e?: React.FormEvent) => void;
     onRandomize: () => string;
 }
 
@@ -29,8 +29,9 @@ export function EditNameDialog({ currentName, onSave, onRandomize }: EditNameDia
         if (open) setDraft(currentName);
     }, [open, currentName]);
 
-    const handleSave = () => {
-        onSave(draft);
+    const handleSave = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        onSave(draft, e);
         setOpen(false);
     };
 
@@ -52,41 +53,42 @@ export function EditNameDialog({ currentName, onSave, onRandomize }: EditNameDia
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[400px]">
-                <DialogHeader>
-                    <DialogTitle>Edit Device Name</DialogTitle>
-                    <DialogDescription>
-                        Choose a name for your device on the network.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="flex flex-col gap-3 py-4">
-                    <div className="flex gap-2">
-                        <Input
-                            value={draft}
-                            onChange={(e) => setDraft(e.target.value)}
-                            placeholder="Enter device name"
-                            onKeyDown={(e) => e.key === "Enter" && handleSave()}
-                            autoFocus
-                        />
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={handleRandomize}
-                            title="Generate random name"
-                            className="shrink-0"
-                        >
-                            <HugeiconsIcon icon={ShuffleIcon} size={16} />
-                        </Button>
+                <form onSubmit={handleSave}>
+                    <DialogHeader>
+                        <DialogTitle>Edit Device Name</DialogTitle>
+                        <DialogDescription>
+                            Choose a name for your device on the network.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-3 py-4">
+                        <div className="flex gap-2">
+                            <Input
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                placeholder="Enter device name"
+                                autoFocus
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={handleRandomize}
+                                title="Generate random name"
+                                className="shrink-0"
+                            >
+                                <HugeiconsIcon icon={ShuffleIcon} size={16} />
+                            </Button>
+                        </div>
                     </div>
-                </div>
-                <DialogFooter>
-                    <Button variant="ghost" onClick={() => setOpen(false)}>
-                        Cancel
-                    </Button>
-                    <Button onClick={handleSave}>
-                        Save
-                    </Button>
-                </DialogFooter>
+                    <DialogFooter>
+                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button type="submit">
+                            Save
+                        </Button>
+                    </DialogFooter>
+                </form>
             </DialogContent>
         </Dialog>
     );

@@ -8,8 +8,8 @@ interface ConnectionRequestModalProps {
     isOpen: boolean;
     senderId: string;
     senderName?: string;
-    onAccept: () => void;
-    onReject: () => void;
+    onAccept: (e: React.MouseEvent) => void;
+    onReject: (e?: React.MouseEvent) => void;
 }
 
 export function ConnectionRequestModal({
@@ -31,10 +31,10 @@ export function ConnectionRequestModal({
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter className="flex space-x-2 sm:space-x-4">
-                    <Button variant="outline" onClick={onReject} className="w-full sm:w-auto">
+                    <Button type="button" variant="outline" onClick={(e) => onReject(e)} className="w-full sm:w-auto">
                         Reject
                     </Button>
-                    <Button onClick={onAccept} className="w-full sm:w-auto">
+                    <Button type="button" onClick={(e) => onAccept(e)} className="w-full sm:w-auto">
                         Accept
                     </Button>
                 </DialogFooter>

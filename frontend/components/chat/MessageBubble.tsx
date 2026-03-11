@@ -27,10 +27,10 @@ export function MessageBubble({ message, isOwnMessage }: MessageBubbleProps) {
         >
             <div
                 className={cn(
-                    "flex flex-col max-w-[75%] px-4 py-2 rounded-2xl",
+                    "flex flex-col max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl shadow-sm transition-all hover:shadow-md",
                     isOwnMessage
-                        ? "bg-primary text-primary-foreground rounded-tr-sm"
-                        : "bg-secondary text-secondary-foreground rounded-tl-sm glass-card"
+                        ? "bg-gradient-to-tr from-primary to-purple-600 text-white rounded-tr-sm shadow-primary/20"
+                        : "bg-secondary/60 backdrop-blur-md text-secondary-foreground rounded-tl-sm border border-border/30 shadow-black/5"
                 )}
             >
                 {!isOwnMessage && (
@@ -83,7 +83,7 @@ export function MessageBubble({ message, isOwnMessage }: MessageBubbleProps) {
                 )}
 
                 {message.text && (
-                    <p className="text-sm break-words whitespace-pre-wrap leading-relaxed">
+                    <p className="text-[15px] break-words whitespace-pre-wrap leading-relaxed">
                         {message.text}
                     </p>
                 )}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -51,7 +52,7 @@ export function MessageInput({ onSend, onSendFile, disabled }: MessageInputProps
     }, [text]);
 
     return (
-        <div className="flex items-end gap-2 p-4 pt-2 glass-card border-t border-border/40 mt-auto rounded-b-xl z-10 w-full relative">
+        <div className="flex items-end gap-2 p-3 md:p-4 pt-2 bg-background/60 backdrop-blur-xl border-t border-border/40 mt-auto lg:rounded-b-3xl z-10 w-full relative shrink-0">
             <input
                 type="file"
                 className="hidden"
@@ -62,7 +63,7 @@ export function MessageInput({ onSend, onSendFile, disabled }: MessageInputProps
             <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 rounded-full shrink-0 text-muted-foreground hover:text-foreground"
+                className="h-[46px] w-[46px] rounded-full shrink-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all active:scale-95"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
             >
@@ -77,14 +78,17 @@ export function MessageInput({ onSend, onSendFile, disabled }: MessageInputProps
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
                 disabled={disabled}
-                className="min-h-[44px] max-h-[120px] resize-none py-3 px-4 bg-background/50 rounded-2xl flex-1 border-border/50 focus-visible:ring-1 focus-visible:ring-primary/30"
+                className="min-h-[46px] max-h-[140px] resize-none py-3 px-5 bg-muted/40 backdrop-blur-sm rounded-3xl flex-1 border-border/50 focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:bg-muted/60 transition-all text-[15px] leading-relaxed"
                 rows={1}
             />
             <Button
                 onClick={handleSend}
                 disabled={disabled || !text.trim()}
                 size="icon"
-                className="h-11 w-11 rounded-full shrink-0 transition-transform active:scale-95 duration-200"
+                className={cn(
+                    "h-[46px] w-[46px] rounded-full shrink-0 transition-all duration-300",
+                    text.trim() ? "bg-gradient-to-tr from-primary to-purple-600 hover:shadow-lg hover:shadow-primary/30 active:scale-90" : "bg-muted text-muted-foreground"
+                )}
             >
                 <HugeiconsIcon icon={SentIcon} size={20} className="ml-1" />
                 <span className="sr-only">Send</span>

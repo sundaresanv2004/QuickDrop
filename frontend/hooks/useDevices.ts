@@ -9,8 +9,15 @@ export interface RemoteDevice {
     name: string;
 }
 
+export interface PublicChat {
+    id: string;
+    admin_name: string;
+    participant_count: number;
+}
+
 export function useDevices() {
     const [devices, setDevices] = useState<RemoteDevice[]>([]);
+    const [publicChats, setPublicChats] = useState<PublicChat[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const { name, loaded } = useDeviceName();
 
@@ -28,19 +35,18 @@ export function useDevices() {
         const unsubscribe = ws.addMessageHandler((message: WebSocketMessage) => {
             if (message.type === "device-list") {
                 setDevices(message.devices);
+                setPublicChats(message.public_chats || []);
                 setIsConnected(true);
             }
         });
 
         return () => {
             unsubscribe();
-            // Only disconnect if the component unmounts fully, 
-            // but in Next.js dev mode strict mode causes unmount/remount.
-            // Usually you'd keep it alive at the app level, but for this phase:
-            ws.disconnect();
+            // We NO LONGER disconnect here, so the singleton WebSocket survives 
+            // Next.js route transitions from Home -> ChatPage.
             setIsConnected(false);
         };
-    }, [loaded]); // Only reconnect if 'loaded' changes (conceptually mounting)
+    }, [loaded, name]); // Connect using latest name upon load
 
     // Send name changes dynamically without reconnecting
     useEffect(() => {
@@ -49,5 +55,5 @@ export function useDevices() {
         }
     }, [name, loaded, isConnected]);
 
-    return { devices, isConnected };
+    return { devices, publicChats, isConnected };
 }

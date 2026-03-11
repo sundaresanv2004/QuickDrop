@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
-from app.models import DeviceInfo, DeviceListMessage, ChatSession
+from app.models import DeviceInfo, DeviceListMessage, ChatSession, ChatMode, PublicChatSummary
 
 
 @dataclass
@@ -95,10 +95,36 @@ class ConnectionManager:
         return self._client_room_map.get(device_id)
 
     def _get_devices_in_room(self, client_ip: str) -> list[DeviceInfo]:
-        """Return the device list for a specific room (public IP)."""
+        """Return the device list for a specific room (public IP).
+        Crucial Rule: Only IDLE devices (active_chat_id is None) are exposed to scanners. 
+        Busy users disappear to prevent interruption spam.
+        """
         if client_ip in self._rooms:
-            return [client.device_info for client in self._rooms[client_ip].clients.values()]
+            return [client.device_info for client in self._rooms[client_ip].clients.values() 
+                    if client.device_info.active_chat_id is None]
         return []
+
+    def _get_public_chats_in_room(self, client_ip: str) -> list[PublicChatSummary]:
+        """Return a summary of all Public chats located in this room."""
+        if client_ip not in self._rooms:
+            return []
+            
+        public_summaries = []
+        for chat_id, chat in self._chats.items():
+            if chat.mode == ChatMode.PUBLIC:
+                # To verify the chat is in this room, check where the admin is
+                admin_ip = self._client_room_map.get(chat.admin_id)
+                if admin_ip == client_ip:
+                    # Resolve admin name for UX display
+                    admin_client = self.get_client(chat.admin_id)
+                    admin_name = admin_client.device_info.name if admin_client else "Unknown Admin"
+                    
+                    public_summaries.append(PublicChatSummary(
+                        id=chat_id,
+                        admin_name=admin_name,
+                        participant_count=len(chat.participants)
+                    ))
+        return public_summaries
 
     def are_in_same_room(self, device_id_a: str, device_id_b: str) -> bool:
         """Check whether two devices belong to the same network room."""
@@ -125,7 +151,8 @@ class ConnectionManager:
             return
             
         devices = self._get_devices_in_room(client_ip)
-        message = DeviceListMessage(type="device-list", devices=devices)
+        public_chats = self._get_public_chats_in_room(client_ip)
+        message = DeviceListMessage(type="device-list", devices=devices, public_chats=public_chats)
         payload = message.model_dump_json()
 
         dead: list[str] = []
@@ -176,7 +203,13 @@ class ConnectionManager:
         self.leave_chat(device_id_b)
 
         chat_id = uuid.uuid4().hex[:12]
-        self._chats[chat_id] = ChatSession(id=chat_id, participants=[device_id_a, device_id_b])
+        # Device A acts as the initiator/admin of the newly formed chat by default
+        self._chats[chat_id] = ChatSession(
+            id=chat_id, 
+            mode=ChatMode.PRIVATE, 
+            admin_id=device_id_a, 
+            participants=[device_id_a, device_id_b]
+        )
         
         # Update devices with active chat tracking
         client_a.device_info.active_chat_id = chat_id

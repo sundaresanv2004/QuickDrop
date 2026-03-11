@@ -16,7 +16,7 @@ export default function ChatPage() {
 
     const { name: localDeviceId } = useDeviceName();
     const { devices } = useDevices();
-    const { connectedPeers } = usePeerConnection(localDeviceId);
+    const { connectedPeers, isAdmin, chatMode, changeChatMode } = usePeerConnection(localDeviceId);
     const { messages, sendMessage, sendFile } = useChat(localDeviceId);
 
     const [isMounted, setIsMounted] = useState(false);
@@ -25,22 +25,22 @@ export default function ChatPage() {
     useEffect(() => {
         setIsMounted(true);
 
-        // Cleanup connection when cleanly unmounting (e.g., navigating to home)
+        const peerManager = getPeerManager();
+
+        // Listen for peer disconnection to gracefully revert home
+        const unsub = peerManager.onPeerStateChange((id, state) => {
+            if (id === targetId && (state === "disconnected" || state === "failed" || state === "closed")) {
+                console.log(`Connection dropped with ${targetId}, reverting to home...`);
+                router.replace("/");
+            }
+        });
+
+        // Cleanup connection only locally to prevent React Strict Mode from spamming 'chat-leave'
         return () => {
-            getPeerManager().cleanup(targetId);
+            unsub();
+            peerManager.cleanup(targetId);
         };
-    }, [targetId]);
-
-    // Ensure we are actually connected to this peer, else boot back to home
-    useEffect(() => {
-        if (!isMounted) return;
-
-        // If the peer disconnects or we load this page without a connection
-        if (!connectedPeers.includes(targetId)) {
-            console.warn(`Local peer is not connected to ${targetId}, redirecting...`);
-            router.replace("/");
-        }
-    }, [isMounted, connectedPeers, targetId, router]);
+    }, [targetId, router]);
 
     if (!isMounted) return null;
 
@@ -49,15 +49,23 @@ export default function ChatPage() {
     const targetName = targetDevice ? targetDevice.name : targetId;
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)]">
+        <div className="flex flex-col h-[100dvh] w-full absolute inset-0 z-50 bg-background/95 backdrop-blur-3xl lg:relative lg:h-[calc(100vh-8rem)] lg:bg-transparent lg:backdrop-blur-none lg:z-auto">
             <ChatWindow
                 targetId={targetId}
                 targetName={targetName}
                 localDeviceId={localDeviceId}
+                isAdmin={isAdmin}
+                chatMode={chatMode}
+                onChangeMode={changeChatMode}
                 messages={messages}
                 onSendMessage={(text) => sendMessage(targetId, text)}
                 onSendFile={(file) => sendFile(targetId, file)}
-                onClose={() => router.push("/")}
+                onClose={() => {
+                    import("@/lib/websocket").then(({ getWebSocket }) => {
+                        getWebSocket().send({ type: "chat-leave" } as any);
+                    });
+                    router.push("/");
+                }}
             />
         </div>
     );

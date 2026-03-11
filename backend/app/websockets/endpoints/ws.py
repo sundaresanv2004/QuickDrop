@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.connection_manager import ConnectionManager
+from app.models.device import ChatMode
 
 router = APIRouter()
 manager = ConnectionManager()
@@ -78,8 +79,16 @@ async def websocket_endpoint(websocket: WebSocket):
                             update_msg = json.dumps({
                                 "type": "chat-update",
                                 "chat_id": chat_id,
-                                "participants": [device_id, target]
+                                "participants": [device_id, target],
+                                "admin_id": device_id,
+                                "mode": "private"
                             })
+                            # Forward acceptance to initiator so they can start WebRTC
+                            msg_data["sender"] = device_id
+                            del msg_data["target"]
+                            await manager.send_personal_message(json.dumps(msg_data), target)
+                            
+                            # Update system state for both
                             await manager.send_personal_message(update_msg, device_id)
                             await manager.send_personal_message(update_msg, target)
 
@@ -100,10 +109,78 @@ async def websocket_endpoint(websocket: WebSocket):
                         update_msg = json.dumps({
                             "type": "chat-update",
                             "chat_id": None,
-                            "participants": []
+                            "participants": [],
+                            "admin_id": None,
+                            "mode": None
                         })
                         for p in participants:
                             await manager.send_personal_message(update_msg, p)
+                            
+                        # Refresh scanner so the departed users reappear as Idle
+                        room_ip = manager.get_room_for_device(device_id)
+                        if room_ip:
+                            await manager.broadcast_device_list_to_room(room_ip)
+
+                # --- Public Chat Management ---
+                elif msg_type == "chat-mode-change":
+                    mode_str = msg_data.get("mode")
+                    client = manager.get_client(device_id)
+                    chat_id = client.device_info.active_chat_id if client else None
+                    if chat_id:
+                        chat = manager.get_chat(chat_id)
+                        if chat and chat.admin_id == device_id:
+                            chat.mode = ChatMode(mode_str)
+                            # Mode changed, we need to broadcast so the scanner updates its public chats payload
+                            room_ip = manager.get_room_for_device(device_id)
+                            if room_ip:
+                                await manager.broadcast_device_list_to_room(room_ip)
+
+                elif msg_type == "public-chat-join":
+                    target_chat_id = msg_data.get("chat_id")
+                    chat = manager.get_chat(target_chat_id)
+                    if chat and chat.mode == ChatMode.PUBLIC:
+                        # Forward request to Admin
+                        msg_data["sender"] = device_id
+                        await manager.send_personal_message(json.dumps(msg_data), chat.admin_id)
+
+                elif msg_type == "public-chat-accept":
+                    scanner_device_id = msg_data.get("target")
+                    client = manager.get_client(device_id)
+                    chat_id = client.device_info.active_chat_id if client else None
+                    chat = manager.get_chat(chat_id) if chat_id else None
+                    
+                    if chat and chat.admin_id == device_id:
+                        # Allow scanner to join
+                        scanner_client = manager.get_client(scanner_device_id)
+                        if scanner_client:
+                            manager.leave_chat(scanner_device_id) # Ensure scanner is clean
+                            chat.participants.append(scanner_device_id)
+                            scanner_client.device_info.active_chat_id = chat.id
+                            
+                            update_msg = json.dumps({
+                                "type": "chat-update",
+                                "chat_id": chat.id,
+                                "participants": chat.participants,
+                                "admin_id": chat.admin_id,
+                                "mode": chat.mode
+                            })
+                            # Send full list updates to all members
+                            for p in chat.participants:
+                                await manager.send_personal_message(update_msg, p)
+                                
+                            room_ip = manager.get_room_for_device(device_id)
+                            if room_ip:
+                                await manager.broadcast_device_list_to_room(room_ip)
+
+                elif msg_type == "public-chat-reject":
+                    scanner_device_id = msg_data.get("target")
+                    client = manager.get_client(device_id)
+                    chat_id = client.device_info.active_chat_id if client else None
+                    chat = manager.get_chat(chat_id) if chat_id else None
+                    if chat and chat.admin_id == device_id:
+                        msg_data["sender"] = device_id
+                        del msg_data["target"]
+                        await manager.send_personal_message(json.dumps(msg_data), scanner_device_id)
 
 
                 # Intercept WebRTC signaling messages
@@ -157,7 +234,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 update_msg = json.dumps({
                     "type": "chat-update",
                     "chat_id": None,
-                    "participants": []
+                    "participants": [],
+                    "admin_id": None,
+                    "mode": None
                 })
                 for p in participants:
                     if p != device_id:

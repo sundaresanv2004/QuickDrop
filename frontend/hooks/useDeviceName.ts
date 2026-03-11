@@ -52,7 +52,10 @@ export function useDeviceName() {
         setLoaded(true);
     }, []);
 
-    const saveName = useCallback((newName: string) => {
+    const saveName = useCallback((newName: string, e?: React.FormEvent) => {
+        if (e) {
+            e.preventDefault();
+        }
         const fallback = getDefaultDeviceName();
         const trimmed = newName.trim() || fallback;
         setName(trimmed);

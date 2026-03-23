@@ -1,38 +1,31 @@
 import { Badge } from "@/components/ui/badge"
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Wifi01Icon } from "@hugeicons/core-free-icons";
-import SetTheme from "@/components/shared/setTheme";
 
 interface StatusBarProps {
   isConnected: boolean;
-  appName: string;
 }
 
-export default function StatusBar({ isConnected, appName }: StatusBarProps) {
+export default function StatusBar({ isConnected }: StatusBarProps) {
   return (
-    <header className="w-full flex items-center justify-between px-6 py-3 backdrop-blur-md bg-background/60 border-b border-border/40 sticky top-0 z-50">
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-          <HugeiconsIcon icon={Wifi01Icon} className="w-4.5 h-4.5 text-primary" />
-        </div>
-        <span className="text-lg font-bold tracking-tight">{appName}</span>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <Badge
-          variant={isConnected ? "default" : "secondary"}
-          className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-300"
-        >
-          <span className="relative flex h-2 w-2">
-            {isConnected && (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-            )}
-            <span className={`relative inline-flex h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`} />
-          </span>
-          {isConnected ? "Ready" : "Connecting..."}
-        </Badge>
-        <SetTheme />
-      </div>
-    </header>
+    <div className="fixed bottom-6 right-6 z-50">
+      <Badge
+        variant="outline"
+        className={`
+          flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium
+          backdrop-blur-2xl border shadow-lg transition-all duration-300
+          ${isConnected
+            ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:bg-blue-500/10 dark:border-blue-400/20 dark:text-blue-400"
+            : "bg-red-500/10 border-red-500/20 text-red-600 dark:bg-red-500/10 dark:border-red-400/20 dark:text-red-400"
+          }
+        `}
+      >
+        <span className="relative flex h-2 w-2">
+          {isConnected && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+          )}
+          <span className={`relative inline-flex h-2 w-2 rounded-full ${isConnected ? "bg-blue-500" : "bg-red-500"}`} />
+        </span>
+        {isConnected ? "Ready" : "Connecting..."}
+      </Badge>
+    </div>
   )
 }

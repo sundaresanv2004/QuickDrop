@@ -33,8 +33,7 @@ services:
     environment:
       - NODE_ENV=production
     healthcheck:
-      # Node 20 has native fetch. Test the home page.
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3001').then(r => {if(!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/"]
       interval: 10s
       timeout: 5s
       retries: 3

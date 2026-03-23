@@ -11,6 +11,11 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - quickdrop_network
 
@@ -26,12 +31,19 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      # In production/deployment, WebSocket URL must point to the public domain connecting to the backend.
-      # Coolify handles absolute routing. If we leave WS_URL empty, frontend dynamically constructs 
-      # ws://[CURRENT_DOMAIN]:8000/api. Next.js standalone server needs this explicitly at runtime if changed.
-      - NEXT_PUBLIC_WS_URL=
+      # Coolify automatically provides SERVICE_URL_BACKEND (e.g. https://api.domain.com)
+      # We map it into Next.js public variables so the browser can reach the backend
+      - NEXT_PUBLIC_API_URL=${SERVICE_URL_BACKEND}/api
+      - NEXT_PUBLIC_WS_URL=${SERVICE_URL_BACKEND}/ws/connect
+    healthcheck:
+      # Node 20 has native fetch. Test the home page.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => {if(!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - quickdrop_network
 

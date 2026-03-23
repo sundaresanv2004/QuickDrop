@@ -23,8 +23,12 @@ export const useWebRTC = () => {
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getWsUrl = () => {
-    const envUrl = process.env.NEXT_PUBLIC_WS_URL;
-    if (envUrl) return envUrl;
+    let envUrl = process.env.NEXT_PUBLIC_WS_URL;
+    // Coolify passes https://... so we must convert it to wss://...
+    if (envUrl) {
+      if (envUrl.startsWith("http")) envUrl = envUrl.replace(/^http/, "ws");
+      return envUrl;
+    }
     if (typeof window === "undefined") return "ws://localhost:8000/ws/connect";
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.hostname}:8000/ws/connect`;

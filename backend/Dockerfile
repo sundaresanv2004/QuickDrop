@@ -14,8 +14,8 @@ RUN uv pip install --system --no-cache -e .
 # Copy the rest of the application
 COPY . .
 
-# Expose port 8000
-EXPOSE 8000
+# Expose port 8001
+EXPOSE 8001
 
 # Run Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

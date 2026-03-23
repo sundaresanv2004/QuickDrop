@@ -15,8 +15,8 @@ interface HealthData {
 const getApiUrl = (path: string) => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (envUrl) return `${envUrl}${path}`;
-  if (typeof window === "undefined") return `http://localhost:8000/api${path}`;
-  return `${window.location.protocol}//${window.location.hostname}:8000/api${path}`;
+  if (typeof window === "undefined") return `http://localhost:8001/api${path}`;
+  return `${window.location.protocol}//${window.location.hostname}:8001/api${path}`;
 };
 
 function formatUptime(seconds: number) {

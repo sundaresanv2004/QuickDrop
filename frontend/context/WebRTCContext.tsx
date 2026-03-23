@@ -2,11 +2,13 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { getDeviceName } from '@/lib/device';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
 
 interface WebRTCContextType {
   isConnected: boolean;
   deviceId: string | null;
+  deviceName: string;
   peers: Peer[];
   sendMessage: (msg: object) => void;
 }
@@ -20,8 +22,9 @@ export const useWebRTC = () => {
 };
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const WS_URL = "ws://localhost:8000/ws/connect";
+  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/connect";
   const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL);
+  const deviceName = getDeviceName();
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -80,7 +83,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [lastMessage]);
 
   return (
-    <WebRTCContext.Provider value={{ isConnected, deviceId, peers, sendMessage }}>
+    <WebRTCContext.Provider value={{ isConnected, deviceId, deviceName, peers, sendMessage }}>
       {children}
     </WebRTCContext.Provider>
   );

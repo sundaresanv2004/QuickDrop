@@ -1,8 +1,11 @@
 from fastapi import APIRouter
 
-router = APIRouter()
+router = APIRouter(prefix="/health", tags=["health"])
 
-@router.get("/health", tags=["Health"])
+@router.get("/")
 async def health_check():
-    """Check if the backend API is running."""
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "QuickDrop API",
+        "version": "0.1.0"
+    }

@@ -1,25 +1,6 @@
-# Python
 __pycache__/
-*.py[cod]
-*.so
 .venv/
-*.egg-info/
-dist/
-build/
-
-# uv
-uv.lock
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Env
+*.pyc
 .env
-.env.*
+dist/
+.uv/

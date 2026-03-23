@@ -1,23 +1,47 @@
-export function getDeviceName(): string {
-  if (typeof navigator === "undefined") return "Unknown Device";
+const adjectives = [
+  "Swift", "Bold", "Calm", "Vivid", "Brave", "Bright", "Sharp",
+  "Quiet", "Warm", "Cool", "Witty", "Noble", "Lucky", "Sleek",
+  "Rapid", "Agile", "Keen", "Lively", "Steady", "Nimble"
+];
 
+const animals = [
+  "Falcon", "Panda", "Otter", "Tiger", "Raven", "Dolphin", "Fox",
+  "Wolf", "Eagle", "Koala", "Lynx", "Hawk", "Bear", "Owl",
+  "Jaguar", "Heron", "Crane", "Bison", "Stag", "Cobra"
+];
+
+const STORAGE_KEY = "quickdrop_device_name";
+
+function generateRandomName(): string {
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  return `${adj} ${animal}`;
+}
+
+function getOSLabel(): string {
+  if (typeof navigator === "undefined") return "";
   const ua = navigator.userAgent;
-  let browser = "Browser";
-  if (ua.includes("Firefox")) browser = "Firefox";
-  else if (ua.includes("SamsungBrowser")) browser = "Samsung Internet";
-  else if (ua.includes("Opera") || ua.includes("OPR")) browser = "Opera";
-  else if (ua.includes("Trident") || ua.includes("MSIE")) browser = "Internet Explorer";
-  else if (ua.includes("Edge") || ua.includes("Edg")) browser = "Edge";
-  else if (ua.includes("Chrome")) browser = "Chrome";
-  else if (ua.includes("Safari")) browser = "Safari";
+  if (ua.includes("iPhone")) return "iPhone";
+  if (ua.includes("iPad")) return "iPad";
+  if (ua.includes("Android")) return "Android";
+  if (ua.includes("Mac")) return "Mac";
+  if (ua.includes("Windows")) return "Windows";
+  if (ua.includes("Linux")) return "Linux";
+  return "Device";
+}
 
-  let os = "Device";
-  if (ua.includes("Windows")) os = "Windows";
-  else if (ua.includes("Mac")) os = "Mac";
-  else if (ua.includes("iPhone")) os = "iPhone";
-  else if (ua.includes("iPad")) os = "iPad";
-  else if (ua.includes("Android")) os = "Android";
-  else if (ua.includes("Linux")) os = "Linux";
+/**
+ * Returns a stable device name, persisted in localStorage.
+ * Same name is returned across all calls in this browser tab/session.
+ */
+export function getDeviceName(): string {
+  if (typeof window === "undefined") return "Unknown Device";
 
-  return `${browser} on ${os}`;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) return stored;
+
+  const os = getOSLabel();
+  const name = `${generateRandomName()}'s ${os}`;
+  localStorage.setItem(STORAGE_KEY, name);
+  return name;
 }

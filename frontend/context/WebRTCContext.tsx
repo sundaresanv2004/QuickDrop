@@ -22,7 +22,15 @@ export const useWebRTC = () => {
 };
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/connect";
+  const getWsUrl = () => {
+    const envUrl = process.env.NEXT_PUBLIC_WS_URL;
+    if (envUrl) return envUrl;
+    if (typeof window === "undefined") return "ws://localhost:8000/ws/connect";
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.hostname}:8000/ws/connect`;
+  };
+
+  const WS_URL = getWsUrl();
   const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL);
   const deviceName = getDeviceName();
 

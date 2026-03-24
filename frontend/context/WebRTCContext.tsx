@@ -149,6 +149,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setConnectionStatus("idle");
     setIncomingRequest(null);
     setTargetPeerId(null);
+    // TODO: also call resetConnection when peer_left matches targetPeerId
   }, []);
 
   // --- STEP 7 MESSAGE ROUTING ---
@@ -188,7 +189,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       case "connect_accept":
         if (connectionStatus === "requesting") {
           setConnectionStatus("connecting");
-          console.log("[HANDSHAKE] connect_accept received — ready for Phase 3");
         }
         break;
       case "connect_reject":
@@ -196,7 +196,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setConnectionStatus("rejected");
           setTargetPeerId(null);
           setTimeout(() => setConnectionStatus("idle"), 3000);
-          console.log("[HANDSHAKE] connect_reject received");
         }
         break;
       case "sdp_offer":

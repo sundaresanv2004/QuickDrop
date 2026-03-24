@@ -53,7 +53,9 @@ export default function DiscoveryPage() {
     myDeviceName, 
     peers, 
     sendConnectRequest,
-    connectionStatus
+    connectionStatus,
+    targetPeerId,
+    incomingRequest
   } = useWebRTC()
 
   const handlePeerClick = (peerId: string) => {
@@ -91,10 +93,14 @@ export default function DiscoveryPage() {
             {peers.map((peer, i) => (
               <div
                 key={peer.device_id}
-                className={`absolute animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "pointer-events-none opacity-40 blur-[2px]" : ""}`}
+                className={`absolute animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}
                 style={getDevicePosition(i)}
               >
-                <PeerBubble peer={peer} onClick={handlePeerClick} />
+                <PeerBubble 
+                  peer={peer} 
+                  onClick={handlePeerClick} 
+                  disabled={connectionStatus !== "idle"}
+                />
               </div>
             ))}
           </div>
@@ -125,6 +131,25 @@ export default function DiscoveryPage() {
       {/* Handshake Phase 2 Modals */}
       <RequestingModal />
       <IncomingRequestModal />
+
+      {/* Connection Status Bars */}
+      {connectionStatus === "requesting" && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-2 rounded-full text-xs font-semibold backdrop-blur-md flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            Waiting for response...
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === "rejected" && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded-full text-xs font-semibold backdrop-blur-md flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-destructive" />
+            Request was declined
+          </div>
+        </div>
+      )}
 
       {/* Pulse wave keyframes */}
       <style jsx>{`

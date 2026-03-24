@@ -5,13 +5,15 @@ import { ComputerIcon } from "@hugeicons/core-free-icons";
 interface PeerBubbleProps {
   peer: Peer;
   onClick: (peerId: string) => void;
+  disabled?: boolean;
 }
 
-export default function PeerBubble({ peer, onClick }: PeerBubbleProps) {
+export default function PeerBubble({ peer, onClick, disabled }: PeerBubbleProps) {
   return (
     <button
       onClick={() => onClick(peer.device_id)}
-      className="group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl p-2 transition-all duration-300 ease-out hover:scale-110 active:scale-95"
+      disabled={disabled}
+      className={`group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl p-2 transition-all duration-300 ease-out ${disabled ? "opacity-40 cursor-not-allowed scale-95" : "hover:scale-110 active:scale-95"}`}
     >
       <div className="relative">
         {/* Pulsing discovery ring */}

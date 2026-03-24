@@ -31,7 +31,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     if (typeof window === "undefined") return "ws://localhost:8001/ws/connect";
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:8001/ws/connect`;
+    return `${proto}//${window.location.host}/ws/connect`;
   };
 
   const WS_URL = getWsUrl();

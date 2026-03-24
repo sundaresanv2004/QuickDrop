@@ -29,20 +29,24 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return envUrl;
     }
     
-    if (typeof window === "undefined") return "ws://localhost:8000/ws/connect";
+    if (typeof window === "undefined") return "ws://localhost:8001/ws/connect";
     
     const hostname = window.location.hostname;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     
+    let finalUrl: string;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return `${proto}//${hostname}:8000/ws/connect`;
+      finalUrl = `${proto}//${hostname}:8001/ws/connect`;
+    } else if (!hostname.startsWith("api-")) {
+      finalUrl = `${proto}//api-${hostname}/ws/connect`;
+    } else {
+      finalUrl = `${proto}//${window.location.host}/ws/connect`;
     }
-    
-    if (!hostname.startsWith("api-")) {
-      return `${proto}//api-${hostname}/ws/connect`;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[WS URL]", finalUrl);
     }
-    
-    return `${proto}//${window.location.host}/ws/connect`;
+    return finalUrl;
   };
 
   const WS_URL = getWsUrl();

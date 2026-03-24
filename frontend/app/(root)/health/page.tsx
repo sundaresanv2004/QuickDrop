@@ -14,12 +14,17 @@ interface HealthData {
 
 const getApiUrl = (path: string) => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl && envUrl.trim() !== "") return `${envUrl}${path}`;
-  if (typeof window === "undefined") return `http://localhost:8000/api${path}`;
+  // If envUrl is set, ensure it doesn't have a trailing slash, and path has a leading slash
+  if (envUrl && envUrl.trim() !== "") {
+    const base = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+  }
+  if (typeof window === "undefined") return `http://localhost:8001/api${path}`;
   
   const hostname = window.location.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${window.location.protocol}//${hostname}:8000/api${path}`;
+    return `${window.location.protocol}//${hostname}:8001/api${path}`;
   }
   
   if (!hostname.startsWith("api-")) {
@@ -74,8 +79,12 @@ export default function HealthPage() {
       <div className="max-w-3xl mx-auto px-6 mt-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
         {error && !health ? (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8 text-center">
-            <p className="text-destructive font-medium">Backend unreachable</p>
-            <p className="text-sm text-muted-foreground mt-1">Make sure the FastAPI server is running on port 8000</p>
+            <p className="text-destructive font-bold mb-2">Backend unreachable</p>
+            <div className="text-sm text-muted-foreground space-y-2 mt-4 text-left font-mono bg-background/50 p-4 rounded-lg border border-border/20">
+              <p>Attempted URL: <span className="text-foreground break-all">{getApiUrl("/health")}</span></p>
+              <p>Check: <a href={getApiUrl("/health")} target="_blank" rel="noreferrer" className="text-primary hover:underline">Open API Link in New Tab</a></p>
+              <p className="mt-4 text-xs">If the link above works but this page still shows "unreachable", check your browser's console for CORS or SSL errors.</p>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">

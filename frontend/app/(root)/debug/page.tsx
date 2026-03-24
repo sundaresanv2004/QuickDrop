@@ -18,12 +18,17 @@ interface DeviceData {
 
 const getApiUrl = (path: string) => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl && envUrl.trim() !== "") return `${envUrl}${path}`;
-  if (typeof window === "undefined") return `http://localhost:8000/api${path}`;
+  // If envUrl is set, ensure it doesn't have a trailing slash, and path has a leading slash
+  if (envUrl && envUrl.trim() !== "") {
+    const base = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+  }
+  if (typeof window === "undefined") return `http://localhost:8001/api${path}`;
   
   const hostname = window.location.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${window.location.protocol}//${hostname}:8000/api${path}`;
+    return `${window.location.protocol}//${hostname}:8001/api${path}`;
   }
   
   if (!hostname.startsWith("api-")) {

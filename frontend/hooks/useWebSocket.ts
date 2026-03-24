@@ -73,11 +73,15 @@ export function useWebSocket(url: string) {
     };
   }, [connect]);
 
-  const sendMessage = (msg: object) => {
+  const sendMessage = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
     }
-  };
+  }, []);
 
-  return { isConnected, lastMessage, sendMessage };
+  return ({ 
+    isConnected, 
+    lastMessage, 
+    sendMessage 
+  });
 }

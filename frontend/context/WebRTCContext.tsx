@@ -1,16 +1,36 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { getDeviceName } from '@/lib/device';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
 
+export type ConnectionStatus =
+  | "idle"           // No active connection or request
+  | "requesting"     // This device sent a connect_request, waiting for answer
+  | "receiving"      // This device received a connect_request, showing modal
+  | "connecting"     // Both accepted, signaling in progress (Phase 3)
+  | "connected"      // DataChannels are open (Phase 4)
+  | "rejected"       // The other device rejected our request
+  | "disconnected"   // Connection was lost after being established
+
 interface WebRTCContextType {
-  isConnected: boolean;
-  deviceId: string | null;
-  deviceName: string;
+  wsConnected: boolean;
+  myDeviceId: string | null;
+  myDeviceName: string;
   peers: Peer[];
   sendMessage: (msg: object) => void;
+
+  // Handshake
+  connectionStatus: ConnectionStatus;
+  incomingRequest: { peerId: string; peerName: string } | null;
+  targetPeerId: string | null;
+
+  // Handshake Actions
+  sendConnectRequest: (peerId: string) => void;
+  acceptRequest: () => void;
+  rejectRequest: () => void;
+  resetConnection: () => void;
 }
 
 const WebRTCContext = createContext<WebRTCContextType | null>(null);
@@ -23,6 +43,7 @@ export const useWebRTC = () => {
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mounted, setMounted] = useState(false);
+  const processedMessagesRef = useRef<Set<any>>(new Set());
   useEffect(() => setMounted(true), []);
 
   const getWsUrl = () => {
@@ -52,30 +73,94 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const WS_URL = mounted ? getWsUrl() : "";
   const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL);
-  const deviceName = mounted ? getDeviceName() : "Unknown Device";
+  const myDeviceName = mounted ? getDeviceName() : "Unknown Device";
 
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [myDeviceId, setMyDeviceId] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
 
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
+  const [incomingRequest, setIncomingRequest] = useState<{ peerId: string; peerName: string } | null>(null);
+  const [targetPeerId, setTargetPeerId] = useState<string | null>(null);
+
   const handleWelcome = useCallback((msg: WelcomeMessage) => {
-    setDeviceId(msg.device_id);
+    setMyDeviceId(msg.device_id);
   }, []);
 
   const handlePeerList = useCallback((msg: PeerListMessage) => {
+    console.log("[DEBUG] handlePeerList", msg.peers.length, "peers");
     setPeers(msg.peers);
   }, []);
 
   const handlePeerJoined = useCallback((msg: PeerJoinedMessage) => {
-    setPeers((prev) => [...prev, { device_id: msg.device_id, device_name: msg.device_name }]);
+    console.log("[DEBUG] handlePeerJoined", msg.device_id, msg.device_name);
+    setPeers((prev) => {
+      if (prev.find((p) => p.device_id === msg.device_id)) {
+        console.log("[DEBUG] Skipping duplicate peer", msg.device_id);
+        return prev;
+      }
+      return [...prev, { device_id: msg.device_id, device_name: msg.device_name }];
+    });
   }, []);
 
   const handlePeerLeft = useCallback((msg: PeerLeftMessage) => {
     setPeers((prev) => prev.filter((p) => p.device_id !== msg.device_id));
   }, []);
 
+  const sendConnectRequest = useCallback((peerId: string) => {
+    if (connectionStatus !== "idle") return;
+
+    setTargetPeerId(peerId);
+    setConnectionStatus("requesting");
+
+    sendMessage({
+      type: "connect_request",
+      to: peerId
+    });
+  }, [connectionStatus, sendMessage]);
+
+  const acceptRequest = useCallback(() => {
+    if (connectionStatus !== "receiving" || !incomingRequest) return;
+
+    setTargetPeerId(incomingRequest.peerId);
+    setConnectionStatus("connecting");
+
+    sendMessage({
+      type: "connect_accept",
+      to: incomingRequest.peerId
+    });
+
+    setIncomingRequest(null);
+  }, [connectionStatus, incomingRequest, sendMessage]);
+
+  const rejectRequest = useCallback(() => {
+    if (connectionStatus !== "receiving" || !incomingRequest) return;
+
+    sendMessage({
+      type: "connect_reject",
+      to: incomingRequest.peerId
+    });
+
+    setIncomingRequest(null);
+    setConnectionStatus("idle");
+    setTargetPeerId(null);
+  }, [connectionStatus, incomingRequest, sendMessage]);
+
+  const resetConnection = useCallback(() => {
+    setConnectionStatus("idle");
+    setIncomingRequest(null);
+    setTargetPeerId(null);
+  }, []);
+
   // --- STEP 7 MESSAGE ROUTING ---
   useEffect(() => {
-    if (!lastMessage) return;
+    if (!lastMessage || processedMessagesRef.current.has(lastMessage)) return;
+    processedMessagesRef.current.add(lastMessage);
+
+    // Keep the set from growing too large
+    if (processedMessagesRef.current.size > 50) {
+      const iter = processedMessagesRef.current.values();
+      processedMessagesRef.current.delete(iter.next().value);
+    }
 
     switch (lastMessage.type) {
       case "welcome":
@@ -88,12 +173,32 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         handlePeerJoined(lastMessage as PeerJoinedMessage);
         break;
       case "peer_left":
+        console.log("[DEBUG] handlePeerLeft", lastMessage.device_id);
         handlePeerLeft(lastMessage as PeerLeftMessage);
         break;
       // These cases will be handled in Phase 2 and 3:
       case "connect_request":
+        const requesterName = peers.find(p => p.device_id === lastMessage.from_id)?.device_name ?? "Unknown Device";
+        setIncomingRequest({
+          peerId: lastMessage.from_id,
+          peerName: requesterName
+        });
+        setConnectionStatus("receiving");
+        break;
       case "connect_accept":
+        if (connectionStatus === "requesting") {
+          setConnectionStatus("connecting");
+          console.log("[HANDSHAKE] connect_accept received — ready for Phase 3");
+        }
+        break;
       case "connect_reject":
+        if (connectionStatus === "requesting") {
+          setConnectionStatus("rejected");
+          setTargetPeerId(null);
+          setTimeout(() => setConnectionStatus("idle"), 3000);
+          console.log("[HANDSHAKE] connect_reject received");
+        }
+        break;
       case "sdp_offer":
       case "sdp_answer":
       case "ice_candidate":
@@ -103,6 +208,14 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft]);
 
+  // Safety check: if peers explode, reset them once to prevent UI crash
+  useEffect(() => {
+    if (peers.length > 200) {
+      console.warn("[CRITICAL] Peers exceeded 200, emergency reset triggered.");
+      setPeers([]);
+    }
+  }, [peers.length]);
+
   // --- STEP 7 DEBUG HELPER ---
   useEffect(() => {
     if (process.env.NODE_ENV === "development" && lastMessage) {
@@ -111,7 +224,23 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [lastMessage]);
 
   return (
-    <WebRTCContext.Provider value={{ isConnected, deviceId, deviceName, peers, sendMessage }}>
+    <WebRTCContext.Provider value={{
+      // Discovery (existing)
+      myDeviceId,
+      myDeviceName,
+      peers,
+      wsConnected: isConnected,
+      sendMessage,
+
+      // Handshake (new)
+      connectionStatus,
+      incomingRequest,
+      targetPeerId,
+      sendConnectRequest,
+      acceptRequest,
+      rejectRequest,
+      resetConnection,
+    }}>
       {children}
     </WebRTCContext.Provider>
   );

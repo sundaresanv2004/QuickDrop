@@ -4,6 +4,8 @@ import { useWebRTC } from "@/context/WebRTCContext"
 import StatusBar from "@/components/discovery/StatusBar"
 import PeerBubble from "@/components/discovery/PeerBubble"
 import EmptyState from "@/components/discovery/EmptyState"
+import RequestingModal from "@/components/handshake/RequestingModal"
+import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ComputerIcon } from "@hugeicons/core-free-icons"
 import Image from "next/image"
@@ -45,10 +47,18 @@ function getDevicePosition(index: number): React.CSSProperties {
 }
 
 export default function DiscoveryPage() {
-  const { isConnected, deviceId, deviceName, peers } = useWebRTC()
+  const { 
+    wsConnected, 
+    myDeviceId, 
+    myDeviceName, 
+    peers, 
+    sendConnectRequest,
+    connectionStatus
+  } = useWebRTC()
 
   const handlePeerClick = (peerId: string) => {
-    console.log("Clicked peer:", peerId)
+    if (connectionStatus !== "idle") return;
+    sendConnectRequest(peerId)
   }
 
   return (
@@ -68,7 +78,7 @@ export default function DiscoveryPage() {
       }} />
 
       {/* Floating status badge — bottom right */}
-      <StatusBar isConnected={isConnected} />
+      <StatusBar isConnected={wsConnected} />
 
       {/* Peer area */}
       <div className="relative flex-1 w-full px-6 pt-10 pb-4">
@@ -81,7 +91,7 @@ export default function DiscoveryPage() {
             {peers.map((peer, i) => (
               <div
                 key={peer.device_id}
-                className="absolute animate-in fade-in zoom-in-75 duration-500 fill-mode-both"
+                className={`absolute animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "pointer-events-none opacity-40 blur-[2px]" : ""}`}
                 style={getDevicePosition(i)}
               >
                 <PeerBubble peer={peer} onClick={handlePeerClick} />
@@ -101,7 +111,7 @@ export default function DiscoveryPage() {
             </div>
           </div>
           <span className="text-xs font-medium text-foreground/40 w-4xl text-center truncate">
-            {deviceId ? `${deviceName} (You)` : "Connecting..."}
+            {myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}
           </span>
         </div>
       </div>
@@ -111,6 +121,10 @@ export default function DiscoveryPage() {
         <Image src="/logo.png" alt="QuickDrop" width={28} height={28} className="rounded-md" />
         <span className="text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
       </div>
+
+      {/* Handshake Phase 2 Modals */}
+      <RequestingModal />
+      <IncomingRequestModal />
 
       {/* Pulse wave keyframes */}
       <style jsx>{`

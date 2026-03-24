@@ -22,6 +22,9 @@ export const useWebRTC = () => {
 };
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const getWsUrl = () => {
     let envUrl = process.env.NEXT_PUBLIC_WS_URL;
     if (envUrl && envUrl.trim() !== "") {
@@ -29,7 +32,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return envUrl;
     }
     
-    if (typeof window === "undefined") return "ws://localhost:8001/ws/connect";
+    if (typeof window === "undefined") return "";
     
     const hostname = window.location.hostname;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -49,9 +52,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return finalUrl;
   };
 
-  const WS_URL = getWsUrl();
+  const WS_URL = mounted ? getWsUrl() : "";
   const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL);
-  const deviceName = getDeviceName();
+  const deviceName = mounted ? getDeviceName() : "Unknown Device";
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);

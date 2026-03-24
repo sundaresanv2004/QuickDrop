@@ -11,10 +11,11 @@ services:
     environment:
       - ENVIRONMENT=production
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   frontend:
     build:
@@ -22,19 +23,22 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_APP_NAME=QuickDrop
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-}
     container_name: quickdrop-frontend
     restart: unless-stopped
     ports:
       - "3001:3001"
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/"]
       interval: 10s
       timeout: 5s
       retries: 3
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
 
 

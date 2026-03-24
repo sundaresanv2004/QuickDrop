@@ -18,27 +18,25 @@ interface DeviceData {
 
 const getApiUrl = (path: string) => {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  // If envUrl is set, ensure it doesn't have a trailing slash, and path has a leading slash
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  // If envUrl is set, ensure it has /api before appending path
   if (envUrl && envUrl.trim() !== "") {
-    const base = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
-    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    let base = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
+    if (!base.endsWith('/api') && !base.includes('/api/')) {
+      base = `${base}/api`;
+    }
     return `${base}${cleanPath}`;
   }
   if (typeof window === "undefined") return `http://localhost:8001/api${path}`;
   
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const pathWithSlash = cleanPath.endsWith('/') ? cleanPath : `${cleanPath}/`;
-  
   const hostname = window.location.hostname;
+  
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${window.location.protocol}//${hostname}:8001/api${pathWithSlash}`;
+    return `${window.location.protocol}//${hostname}:8001/api${cleanPath}`;
   }
   
-  if (!hostname.startsWith("api-")) {
-    return `${window.location.protocol}//api-${hostname}/api${pathWithSlash}`;
-  }
-  
-  return `${window.location.protocol}//${window.location.host}/api${pathWithSlash}`;
+  return `${window.location.protocol}//${window.location.host}/api${cleanPath}`;
 };
 
 export default function DebugDashboardPage() {

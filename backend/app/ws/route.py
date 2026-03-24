@@ -23,18 +23,14 @@ async def signaling_endpoint(websocket: WebSocket):
     device_id = str(uuid.uuid4())
     
     # Try getting real IP from headers first (if behind proxy), then fallback to client host
-    cf_ip = websocket.headers.get("cf-connecting-ip")
-    real_ip = websocket.headers.get("x-real-ip")
-    forwarded_for = websocket.headers.get("x-forwarded-for")
-    
-    if cf_ip:
-        ip = cf_ip.split(",")[0].strip()
-    elif real_ip:
-        ip = real_ip.split(",")[0].strip()
-    elif forwarded_for:
-        ip = forwarded_for.split(",")[0].strip()
-    else:
-        ip = websocket.client.host
+    # Standard headers used by common reverse proxies
+    headers = websocket.headers
+    ip = (
+        headers.get("cf-connecting-ip") or 
+        headers.get("x-real-ip") or 
+        (headers.get("x-forwarded-for") or "").split(",")[0].strip() or 
+        websocket.client.host
+    )
         
     
     # If connection is coming from the same machine, report its actual LAN IP

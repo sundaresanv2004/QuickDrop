@@ -29,7 +29,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let envUrl = process.env.NEXT_PUBLIC_WS_URL;
     if (envUrl && envUrl.trim() !== "") {
       if (envUrl.startsWith("http")) envUrl = envUrl.replace(/^http/, "ws");
-      return envUrl;
+      const base = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
+      return base.endsWith('/ws/connect') ? base : `${base}/ws/connect`;
     }
     
     if (typeof window === "undefined") return "";
@@ -37,19 +38,16 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const hostname = window.location.hostname;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     
-    let finalUrl: string;
+    // Default to using the same host on port 8001 if on localhost, 
+    // otherwise use the current host which is usually handled via reverse proxy.
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      finalUrl = `${proto}//${hostname}:8001/ws/connect`;
-    } else if (!hostname.startsWith("api-")) {
-      finalUrl = `${proto}//api-${hostname}/ws/connect`;
-    } else {
-      finalUrl = `${proto}//${window.location.host}/ws/connect`;
+      return `${proto}//${hostname}:8001/ws/connect`;
     }
-
-    if (process.env.NODE_ENV === "development") {
-      console.log("[WS URL]", finalUrl);
-    }
-    return finalUrl;
+    
+    // In production/cloud, if WS_URL is not set, we assume the backend is reachable 
+    // at the same host under the /ws path, or via an 'api.' subdomain.
+    // We'll try the current host first as it's more common for unified deployments.
+    return `${proto}//${window.location.host}/ws/connect`;
   };
 
   const WS_URL = mounted ? getWsUrl() : "";

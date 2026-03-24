@@ -26,16 +26,19 @@ const getApiUrl = (path: string) => {
   }
   if (typeof window === "undefined") return `http://localhost:8001/api${path}`;
   
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const pathWithSlash = cleanPath.endsWith('/') ? cleanPath : `${cleanPath}/`;
+  
   const hostname = window.location.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${window.location.protocol}//${hostname}:8001/api${path}`;
+    return `${window.location.protocol}//${hostname}:8001/api${pathWithSlash}`;
   }
   
   if (!hostname.startsWith("api-")) {
-    return `${window.location.protocol}//api-${hostname}/api${path}`;
+    return `${window.location.protocol}//api-${hostname}/api${pathWithSlash}`;
   }
   
-  return `${window.location.protocol}//${window.location.host}/api${path}`;
+  return `${window.location.protocol}//${window.location.host}/api${pathWithSlash}`;
 };
 
 export default function DebugDashboardPage() {

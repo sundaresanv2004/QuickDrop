@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { WSMessage } from '@/types/messages';
 import { getDeviceName } from '@/lib/device';
 
@@ -7,12 +7,24 @@ export function useWebSocket(url: string) {
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  useEffect(() => {
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const connect = useCallback(() => {
+    // Prevent multiple connection attempts
+    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
+      // Clear any pending reconnects once successful
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       ws.send(JSON.stringify({
         type: "register",
         device_name: getDeviceName()
@@ -30,16 +42,33 @@ export function useWebSocket(url: string) {
 
     ws.onclose = () => {
       setIsConnected(false);
+      wsRef.current = null;
+      // Auto-reconnect after 2.5 seconds
+      reconnectTimeoutRef.current = setTimeout(() => {
+        console.log("Attempting WebSocket Reconnection...");
+        connect();
+      }, 2500);
     };
 
     ws.onerror = (event) => {
       console.error("WS Error", event);
     };
+  }, [url]);
+
+  useEffect(() => {
+    connect();
 
     return () => {
-      ws.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        // Prevent onclose handle from triggering a reconnect when unmounting
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
     };
-  }, [url]);
+  }, [connect]);
 
   const sendMessage = (msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

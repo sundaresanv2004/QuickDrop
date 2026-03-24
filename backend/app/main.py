@@ -6,12 +6,21 @@ from app.ws.route import router as ws_router
 
 app = FastAPI(title="QuickDrop", version="0.1.0")
 
+# Explicitly allow the known frontend domains for robust CORS
+origins = [
+    "https://quickdrop.sundaresan.dev",
+    "http://quickdrop.sundaresan.dev",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins + ["*"], # Combine explicit and wildcard
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=False,
 )
 
 app.include_router(api_router, prefix="/api")

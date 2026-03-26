@@ -45,3 +45,24 @@ export function getDeviceName(): string {
   localStorage.setItem(STORAGE_KEY, name);
   return name;
 }
+
+export function setDeviceName(newName: string): string {
+  if (typeof window === "undefined") return "Unknown Device";
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    const os = getOSLabel();
+    const generated = `${generateRandomName()}'s ${os}`;
+    localStorage.setItem(STORAGE_KEY, generated);
+    return generated;
+  }
+  localStorage.setItem(STORAGE_KEY, trimmed);
+  return trimmed;
+}
+export function getDeviceType(): string {
+  if (typeof navigator === "undefined") return "unknown";
+  const ua = navigator.userAgent;
+  if (ua.includes("iPhone") || ua.includes("Android") && ua.includes("Mobile")) return "mobile";
+  if (ua.includes("iPad") || ua.includes("Android") && !ua.includes("Mobile")) return "tablet";
+  if (ua.includes("Mac") || ua.includes("Windows") || ua.includes("Linux")) return "desktop";
+  return "unknown";
+}

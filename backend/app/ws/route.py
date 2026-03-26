@@ -60,10 +60,12 @@ async def signaling_endpoint(websocket: WebSocket):
 
             if msg.get("type") == "register":
                 manager.devices[device_id].device_name = msg["device_name"]
+                manager.devices[device_id].device_type = msg.get("device_type", "unknown")
                 await manager.broadcast_room(ip, {
                     "type": "peer_joined",
                     "device_id": device_id,
-                    "device_name": msg["device_name"]
+                    "device_name": msg["device_name"],
+                    "device_type": manager.devices[device_id].device_type
                 }, exclude_id=device_id)
 
             elif msg.get("to") is not None:
@@ -71,7 +73,9 @@ async def signaling_endpoint(websocket: WebSocket):
                 await manager.send_to(msg["to"], msg)
 
     # STEP E: Disconnect
-    except WebSocketDisconnect:
+    except Exception:
+        pass
+    finally:
         manager.disconnect(device_id)
         await manager.broadcast_room(ip, {
             "type": "peer_left",

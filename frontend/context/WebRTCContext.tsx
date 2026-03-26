@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { getDeviceName } from '@/lib/device';
+import { getDeviceName, setDeviceName, getDeviceType } from '@/lib/device';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
 import type { ChatMessage, PendingFileTransfer, TextMessagePayload, FileMetaPayload, SystemPayload } from '@/types/chat';
 
@@ -25,6 +25,8 @@ interface WebRTCContextType {
   wsConnected: boolean;
   myDeviceId: string | null;
   myDeviceName: string;
+  myDeviceType: string;
+  updateDeviceName: (name: string) => void;
   peers: Peer[];
   sendMessage: (msg: object) => void;
 
@@ -73,7 +75,12 @@ export const useWebRTC = () => {
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mounted, setMounted] = useState(false);
   const processedMessagesRef = useRef<Set<WSMessage>>(new Set());
+  const [myDeviceName, setMyDeviceName] = useState<string>("Unknown Device");
+  const [myDeviceType, setMyDeviceType] = useState<string>("unknown");
+
   useEffect(() => {
+    setMyDeviceName(getDeviceName());
+    setMyDeviceType(getDeviceType());
     const timer = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(timer);
   }, []);
@@ -99,8 +106,12 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const WS_URL = mounted ? getWsUrl() : "";
-  const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL);
-  const myDeviceName = mounted ? getDeviceName() : "Unknown Device";
+  const { isConnected, lastMessage, sendMessage } = useWebSocket(WS_URL, myDeviceName, myDeviceType);
+
+  const updateDeviceNameLocal = useCallback((name: string) => {
+    const updated = setDeviceName(name);
+    setMyDeviceName(updated);
+  }, []);
 
   const [myDeviceId, setMyDeviceId] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -143,10 +154,22 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const handlePeerJoined = useCallback((msg: PeerJoinedMessage) => {
     setPeers((prev) => {
-      if (prev.find((p) => p.device_id === msg.device_id)) {
-        return prev;
+      const existingIdx = prev.findIndex((p) => p.device_id === msg.device_id);
+      if (existingIdx !== -1) {
+        // If they already exist, update their info
+        const updated = [...prev];
+        updated[existingIdx] = { 
+          ...updated[existingIdx], 
+          device_name: msg.device_name,
+          device_type: msg.device_type
+        };
+        return updated;
       }
-      return [...prev, { device_id: msg.device_id, device_name: msg.device_name }];
+      return [...prev, { 
+        device_id: msg.device_id, 
+        device_name: msg.device_name,
+        device_type: msg.device_type
+      }];
     });
   }, []);
 
@@ -905,6 +928,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Discovery (existing)
       myDeviceId,
       myDeviceName,
+      myDeviceType,
+      updateDeviceName: updateDeviceNameLocal,
       peers,
       wsConnected: isConnected,
       sendMessage,

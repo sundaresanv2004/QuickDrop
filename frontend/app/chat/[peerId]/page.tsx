@@ -49,8 +49,9 @@ export default function ChatPage() {
     }
   }, [sendSystemMessage])
 
-  const peerName =
-    peers.find(p => p.device_id === peerId)?.device_name ?? "Unknown Device"
+  const peer = peers.find(p => p.device_id === peerId)
+  const peerName = peer?.device_name ?? "Unknown Device"
+  const peerType = peer?.device_type ?? "unknown"
 
   const isChannelOpen = 
     chatChannel?.readyState === "open" && 
@@ -92,6 +93,7 @@ export default function ChatPage() {
     <div className="flex flex-col h-[100dvh] bg-background">
       <ChatHeader
         peerName={peerName}
+        peerType={peerType}
         connectionStatus={connectionStatus}
         onLeave={handleLeave}
       />

@@ -7,3 +7,4 @@ class DeviceInfo:
     device_name: str
     ip: str
     websocket: Any   # fastapi.WebSocket — typed as Any to avoid circular imports
+    device_type: str = "unknown"

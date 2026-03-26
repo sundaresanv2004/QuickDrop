@@ -17,6 +17,7 @@ export interface PeerJoinedMessage extends BaseMessage {
   type: "peer_joined"
   device_id: string
   device_name: string
+  device_type: string
 }
 export interface PeerLeftMessage extends BaseMessage {
   type: "peer_left"
@@ -53,6 +54,7 @@ export interface ICEMessage extends BaseMessage {
 export interface Peer {
   device_id: string
   device_name: string
+  device_type: string
 }
 
 export type WSMessage =

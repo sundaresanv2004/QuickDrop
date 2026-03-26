@@ -6,13 +6,14 @@ class ConnectionManager:
         self.devices: dict[str, DeviceInfo] = {}    # device_id → DeviceInfo
         self.rooms: dict[str, set[str]] = {}        # ip → set of device_ids
 
-    async def connect(self, websocket: WebSocket, device_id: str, device_name: str, ip: str):
+    async def connect(self, websocket: WebSocket, device_id: str, device_name: str, ip: str, device_type: str = "unknown"):
         await websocket.accept()
         self.devices[device_id] = DeviceInfo(
             device_id=device_id,
             device_name=device_name,
             ip=ip,
-            websocket=websocket
+            websocket=websocket,
+            device_type=device_type
         )
         if ip not in self.rooms:
             self.rooms[ip] = set()
@@ -32,7 +33,11 @@ class ConnectionManager:
         if ip not in self.rooms:
             return []
         return [
-            {"device_id": d, "device_name": self.devices[d].device_name}
+            {
+                "device_id": d, 
+                "device_name": self.devices[d].device_name,
+                "device_type": self.devices[d].device_type
+            }
             for d in self.rooms[ip] if d != exclude_id
         ]
 

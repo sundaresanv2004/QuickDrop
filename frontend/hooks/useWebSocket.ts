@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WSMessage } from '@/types/messages';
-import { getDeviceName } from '@/lib/device';
 
-export function useWebSocket(url: string) {
+export function useWebSocket(url: string, deviceName: string, deviceType: string) {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -32,7 +31,8 @@ export function useWebSocket(url: string) {
       }
       ws.send(JSON.stringify({
         type: "register",
-        device_name: getDeviceName()
+        device_name: deviceName,
+        device_type: deviceType
       }));
     };
 
@@ -78,6 +78,21 @@ export function useWebSocket(url: string) {
       }
     };
   }, [connect]);
+
+  // If the device name changes while connected, resend the register message
+  const prevDeviceNameRef = useRef(deviceName);
+  useEffect(() => {
+    if (prevDeviceNameRef.current !== deviceName) {
+      prevDeviceNameRef.current = deviceName;
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: "register",
+          device_name: deviceName,
+          device_type: deviceType
+        }));
+      }
+    }
+  }, [deviceName]);
 
   const sendMessage = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

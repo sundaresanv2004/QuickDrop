@@ -1,12 +1,7 @@
 "use client"
 
 import { HugeiconsIcon } from '@hugeicons/react'
-import { 
-  ArrowLeft01Icon,
-  WifiConnected01Icon,
-  Loading03Icon,
-  WifiDisconnected01Icon,
-} from "@hugeicons/core-free-icons"
+import { ArrowLeft01Icon } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -21,51 +16,43 @@ interface ChatHeaderProps {
 const statusConfig = {
   connected: {
     label:    "Live",
-    dotClass: "bg-green-500 animate-pulse",
-    icon:     WifiConnected01Icon,
-    variant:  "default" as const,
+    dotClass: "bg-emerald-500 animate-pulse",
+    variant:  "success" as const,
   },
   connecting: {
     label:    "Connecting",
-    dotClass: "bg-yellow-500 animate-pulse",
-    icon:     Loading03Icon,
-    variant:  "secondary" as const,
+    dotClass: "bg-amber-500 animate-pulse",
+    variant:  "warning" as const,
   },
   disconnected: {
     label:    "Offline",
     dotClass: "bg-red-500",
-    icon:     WifiDisconnected01Icon,
     variant:  "destructive" as const,
   },
   rejected: {
     label:    "Rejected",
     dotClass: "bg-red-500",
-    icon:     WifiDisconnected01Icon,
     variant:  "destructive" as const,
   },
   left: {
     label:    "Offline",
-    dotClass: "bg-gray-400",
-    icon:     WifiDisconnected01Icon,
+    dotClass: "bg-muted-foreground",
     variant:  "secondary" as const,
   },
   idle: {
     label:    "Idle",
-    dotClass: "bg-gray-400",
-    icon:     WifiDisconnected01Icon,
+    dotClass: "bg-muted-foreground",
     variant:  "secondary" as const,
   },
   requesting: {
     label:    "Requesting",
-    dotClass: "bg-yellow-500 animate-pulse",
-    icon:     Loading03Icon,
-    variant:  "secondary" as const,
+    dotClass: "bg-amber-500 animate-pulse",
+    variant:  "warning" as const,
   },
   receiving: {
     label:    "Incoming",
-    dotClass: "bg-blue-500 animate-pulse",
-    icon:     Loading03Icon,
-    variant:  "secondary" as const,
+    dotClass: "bg-sky-500 animate-pulse",
+    variant:  "info" as const,
   },
 }
 

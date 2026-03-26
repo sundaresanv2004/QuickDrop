@@ -14,6 +14,8 @@ export type ConnectionStatus =
   | "rejected"       // The other device rejected our request
   | "disconnected"   // Connection was lost after being established
 
+import { toast } from 'sonner';
+
 interface WebRTCContextType {
   wsConnected: boolean;
   myDeviceId: string | null;
@@ -28,6 +30,7 @@ interface WebRTCContextType {
 
   // Handshake Actions
   sendConnectRequest: (peerId: string) => void;
+  cancelRequest: () => void;
   acceptRequest: () => void;
   rejectRequest: () => void;
   resetConnection: () => void;
@@ -59,15 +62,10 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const hostname = window.location.hostname;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     
-    // Default to using the same host on port 8001 if on localhost, 
-    // otherwise use the current host which is usually handled via reverse proxy.
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return `${proto}//${hostname}:8001/ws/connect`;
     }
     
-    // In production/cloud, if WS_URL is not set, we assume the backend is reachable 
-    // at the same host under the /ws path, or via an 'api.' subdomain.
-    // We'll try the current host first as it's more common for unified deployments.
     return `${proto}//${window.location.host}/ws/connect`;
   };
 
@@ -92,10 +90,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const handlePeerJoined = useCallback((msg: PeerJoinedMessage) => {
-    console.log("[DEBUG] handlePeerJoined", msg.device_id, msg.device_name);
     setPeers((prev) => {
       if (prev.find((p) => p.device_id === msg.device_id)) {
-        console.log("[DEBUG] Skipping duplicate peer", msg.device_id);
         return prev;
       }
       return [...prev, { device_id: msg.device_id, device_name: msg.device_name }];
@@ -117,6 +113,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       to: peerId
     });
   }, [connectionStatus, sendMessage]);
+
+  const cancelRequest = useCallback(() => {
+    if (connectionStatus !== "requesting" || !targetPeerId) return;
+
+    sendMessage({
+      type: "connect_cancel",
+      to: targetPeerId
+    });
+
+    setConnectionStatus("idle");
+    setTargetPeerId(null);
+  }, [connectionStatus, targetPeerId, sendMessage]);
 
   const acceptRequest = useCallback(() => {
     if (connectionStatus !== "receiving" || !incomingRequest) return;
@@ -165,17 +173,17 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     switch (lastMessage.type) {
       case "welcome":
-        handleWelcome(lastMessage as WelcomeMessage);
+        handleWelcome(lastMessage);
         break;
       case "peer_list":
-        handlePeerList(lastMessage as PeerListMessage);
+        handlePeerList(lastMessage);
         break;
       case "peer_joined":
-        handlePeerJoined(lastMessage as PeerJoinedMessage);
+        handlePeerJoined(lastMessage);
         break;
       case "peer_left":
         console.log("[DEBUG] handlePeerLeft", lastMessage.device_id);
-        handlePeerLeft(lastMessage as PeerLeftMessage);
+        handlePeerLeft(lastMessage);
         break;
       // These cases will be handled in Phase 2 and 3:
       case "connect_request":
@@ -186,13 +194,22 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         setConnectionStatus("receiving");
         break;
+      case "connect_cancel":
+        if (connectionStatus === "receiving" && incomingRequest && incomingRequest.peerId === lastMessage.from_id) {
+          toast.info(`Request from ${incomingRequest.peerName} was cancelled`);
+          setIncomingRequest(null);
+          setConnectionStatus("idle");
+        }
+        break;
       case "connect_accept":
         if (connectionStatus === "requesting") {
+          toast.success("Connection request accepted!");
           setConnectionStatus("connecting");
         }
         break;
       case "connect_reject":
         if (connectionStatus === "requesting") {
+          toast.error("Connection request declined");
           setConnectionStatus("rejected");
           setTargetPeerId(null);
           setTimeout(() => setConnectionStatus("idle"), 3000);
@@ -203,9 +220,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       case "ice_candidate":
         break;
       default:
-        console.warn("Unhandled WS message type:", lastMessage);
+        console.warn("Unhandled WS message type:", (lastMessage as any).type);
     }
-  }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft]);
+  }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft, connectionStatus, incomingRequest, peers]);
 
   // Safety check: if peers explode, reset them once to prevent UI crash
   useEffect(() => {
@@ -236,6 +253,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       incomingRequest,
       targetPeerId,
       sendConnectRequest,
+      cancelRequest,
       acceptRequest,
       rejectRequest,
       resetConnection,

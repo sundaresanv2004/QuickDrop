@@ -1,6 +1,6 @@
 export type MessageType =
   | "register" | "welcome" | "peer_list" | "peer_joined" | "peer_left"
-  | "connect_request" | "connect_accept" | "connect_reject"
+  | "connect_request" | "connect_accept" | "connect_reject" | "connect_cancel"
   | "sdp_offer" | "sdp_answer" | "ice_candidate"
 
 export interface BaseMessage { type: MessageType }
@@ -32,6 +32,11 @@ export interface ConnectResponseMessage extends BaseMessage {
   from_id: string
   to: string
 }
+export interface ConnectCancelMessage extends BaseMessage {
+  type: "connect_cancel"
+  from_id: string
+  to: string
+}
 export interface SDPMessage extends BaseMessage {
   type: "sdp_offer" | "sdp_answer"
   from_id: string
@@ -52,4 +57,4 @@ export interface Peer {
 
 export type WSMessage =
   | WelcomeMessage | PeerListMessage | PeerJoinedMessage | PeerLeftMessage
-  | ConnectRequestMessage | ConnectResponseMessage | SDPMessage | ICEMessage
+  | ConnectRequestMessage | ConnectResponseMessage | ConnectCancelMessage | SDPMessage | ICEMessage

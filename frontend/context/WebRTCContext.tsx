@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { getDeviceName, setDeviceName, getDeviceType } from '@/lib/device';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
-import type { ChatMessage, PendingFileTransfer, TextMessagePayload, FileMetaPayload, SystemPayload } from '@/types/chat';
+import type { ChatMessage, PendingFileTransfer, TextMessagePayload, FileMetaPayload, SystemPayload, ChatPayload, ReactionMessagePayload } from '@/types/chat';
 
 export type ConnectionStatus =
   | "idle"           // No active connection or request
@@ -60,6 +60,7 @@ interface WebRTCContextType {
   addMessage:    (message: ChatMessage) => void;
   clearMessages: () => void;
   sendChatMessage: (content: string) => void;
+  sendReaction: (messageId: string, emoji: string) => void;
   sendSystemMessage: (payload: SystemPayload) => void;
   sendFile: (file: File) => Promise<void>;
 }
@@ -81,8 +82,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     setMyDeviceName(getDeviceName());
     setMyDeviceType(getDeviceType());
-    const timer = setTimeout(() => setMounted(true), 0);
-    return () => clearTimeout(timer);
+    setMounted(true);
   }, []);
 
   const getWsUrl = () => {
@@ -268,7 +268,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         case "file_meta": {
           // Add a "receiving" file bubble to messages immediately
           const fileMessage: ChatMessage = {
-            id:        crypto.randomUUID(),
+            id:        payload.fileId,
             type:      "file",
             direction: "received",
             timestamp: Date.now(),
@@ -358,7 +358,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     channel.onmessage = (event) => {
       if (label === "chat") {
         try {
-          const payload: TextMessagePayload = JSON.parse(event.data);
+          const payload: ChatPayload = JSON.parse(event.data);
 
           if (payload.type === "text_message") {
             const message: ChatMessage = {
@@ -369,6 +369,39 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               timestamp: payload.timestamp,
             };
             addMessage(message);
+          } else if (payload.type === "reaction_message") {
+            setMessages(prev => prev.map(msg => {
+              if (msg.id !== payload.messageId) return msg;
+              
+              const currentReactions = { ...(msg.reactions || {}) };
+              
+              // 1. Remove this user's reaction from any other emoji
+              Object.keys(currentReactions).forEach(key => {
+                if (key !== payload.emoji) {
+                  const filtered = currentReactions[key].filter(id => id !== payload.fromId);
+                  if (filtered.length === 0) {
+                    delete currentReactions[key];
+                  } else {
+                    currentReactions[key] = filtered;
+                  }
+                }
+              });
+
+              // 2. Togle/Add the new emoji
+              const currentUsers = [...(currentReactions[payload.emoji] || [])];
+              if (currentUsers.includes(payload.fromId)) {
+                const updatedUsers = currentUsers.filter(id => id !== payload.fromId);
+                if (updatedUsers.length === 0) {
+                  delete currentReactions[payload.emoji];
+                } else {
+                  currentReactions[payload.emoji] = updatedUsers;
+                }
+              } else {
+                currentReactions[payload.emoji] = [...currentUsers, payload.fromId];
+              }
+              
+              return { ...msg, reactions: currentReactions };
+            }));
           }
         } catch {
           console.error("[CHAT] Failed to parse chat message:", event.data);
@@ -517,6 +550,55 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     addMessage(message);
   }, [addMessage]);
 
+  const sendReaction = useCallback((messageId: string, emoji: string) => {
+    if (!chatRef.current || chatRef.current.readyState !== "open" || !myDeviceId) {
+      return;
+    }
+
+    const payload: ReactionMessagePayload = {
+      type: "reaction_message",
+      messageId,
+      emoji,
+      fromId: myDeviceId,
+    };
+
+    chatRef.current.send(JSON.stringify(payload));
+
+    // Update local state
+    setMessages(prev => prev.map(msg => {
+      if (msg.id !== messageId) return msg;
+
+      const currentReactions = { ...(msg.reactions || {}) };
+
+      // 1. Remove my reaction from any other emoji
+      Object.keys(currentReactions).forEach(key => {
+        if (key !== emoji) {
+          const filtered = currentReactions[key].filter(id => id !== myDeviceId);
+          if (filtered.length === 0) {
+            delete currentReactions[key];
+          } else {
+            currentReactions[key] = filtered;
+          }
+        }
+      });
+
+      // 2. Toggle/Add the new emoji
+      const currentUsers = [...(currentReactions[emoji] || [])];
+      if (currentUsers.includes(myDeviceId)) {
+        const updatedUsers = currentUsers.filter(id => id !== myDeviceId);
+        if (updatedUsers.length === 0) {
+          delete currentReactions[emoji];
+        } else {
+          currentReactions[emoji] = updatedUsers;
+        }
+      } else {
+        currentReactions[emoji] = [...currentUsers, myDeviceId];
+      }
+
+      return { ...msg, reactions: currentReactions };
+    }));
+  }, [myDeviceId]);
+
   const sendSystemMessage = useCallback((payload: SystemPayload) => {
     if (!systemRef.current || systemRef.current.readyState !== "open") {
       console.warn("[SYSTEM] Cannot send — channel not open");
@@ -556,7 +638,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // 3. Add sending bubble to local messages
       const fileMessage: ChatMessage = {
-        id:        crypto.randomUUID(),
+        id:        fileId,
         type:      "file",
         direction: "sent",
         timestamp: Date.now(),
@@ -757,22 +839,14 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // --- STEP 7 MESSAGE ROUTING ---
   useEffect(() => {
-    if (!lastMessage || !mounted || processedMessagesRef.current.has(lastMessage)) return;
+    if (!lastMessage || !mounted) return;
+    
+    // Deduplicate: ONLY check after mount, and check identity or type-id combination
+    if (processedMessagesRef.current.has(lastMessage)) return;
     processedMessagesRef.current.add(lastMessage);
 
-    // Keep the set from growing too large
-    if (processedMessagesRef.current.size > 50) {
-      const iter = processedMessagesRef.current.values();
-      const first = iter.next().value;
-      if (first) {
-        processedMessagesRef.current.delete(first);
-      }
-    }
-
-    const timer = setTimeout(() => {
-      if (!lastMessage) return;
-
-      switch (lastMessage.type) {
+    // Process immediately (no setTimeout wrapping needed)
+    switch (lastMessage.type) {
       case "welcome":
         handleWelcome(lastMessage);
         break;
@@ -901,10 +975,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         break;
       default:
         console.warn("Unhandled WS message type:", (lastMessage as WSMessage).type);
-      }
-    }, 0);
-
-    return () => clearTimeout(timer);
+    }
   }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft, connectionStatus, incomingRequest, peers, initializePeerConnection, sendMessage, flushIceCandidates, mounted]);
 
   // Safety check: if peers explode, reset them once to prevent UI crash
@@ -960,6 +1031,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       addMessage,
       clearMessages,
       sendChatMessage,
+      sendReaction,
       sendSystemMessage,
       sendFile,
     }}>

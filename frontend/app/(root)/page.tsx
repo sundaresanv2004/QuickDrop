@@ -205,8 +205,8 @@ export default function DiscoveryPage() {
                       className="flex items-center gap-2 cursor-pointer py-1 px-3 rounded-full hover:bg-secondary/50 transition-all group/name border border-transparent hover:border-border/50"
                       onClick={handleNameEdit}
                     >
-                      <span className="text-xs sm:text-sm font-semibold text-foreground/60 group-hover/name:text-foreground max-w-[150px] sm:max-w-[200px] text-center truncate transition-colors" title={myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}>
-                        {myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}
+                      <span className="text-xs sm:text-sm font-semibold text-foreground/60 group-hover/name:text-foreground max-w-[150px] sm:max-w-[200px] text-center truncate transition-colors" title={(wsConnected || peers.length > 0) ? `${myDeviceName} (You)` : "Connecting..."}>
+                        {(wsConnected || peers.length > 0) ? `${myDeviceName} (You)` : "Connecting..."}
                       </span>
                       {myDeviceId && (
                         <HugeiconsIcon

@@ -5,11 +5,13 @@ import { ChatMessage } from "@/types/chat"
 import EmptyChat from "./EmptyChat"
 import MessageBubble from "./MessageBubble"
 import FileBubble from "./FileBubble"
+import TypingIndicator from "./TypingIndicator"
 import { cn } from "@/lib/utils"
 
 interface MessageListProps {
   messages: ChatMessage[]
   isTyping: boolean
+  peerName: string
 }
 
 function isSameDay(a: number, b: number): boolean {
@@ -33,7 +35,7 @@ function formatDateLabel(timestamp: number): string {
   })
 }
 
-export default function MessageList({ messages, isTyping }: MessageListProps) {
+export default function MessageList({ messages, isTyping, peerName }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -75,6 +77,9 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
           </div>
         )
       })}
+      
+      <TypingIndicator isTyping={isTyping} peerName={peerName} />
+      
       <div ref={bottomRef} className="h-1" />
     </div>
   )

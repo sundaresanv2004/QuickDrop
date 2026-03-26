@@ -26,17 +26,17 @@ export default function IncomingRequestModal() {
           </p>
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row gap-2 mt-6">
+        <div className="flex flex-row gap-3 mt-8">
           <Button 
             variant="outline" 
             onClick={rejectRequest} 
-            className="w-full sm:w-auto flex-1 rounded-full h-11 transition-colors hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
+            className="flex-1 rounded-full h-11 transition-colors hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 border-muted-foreground/20"
           >
             Decline
           </Button>
           <Button 
             onClick={acceptRequest} 
-            className="w-full sm:w-auto flex-1 rounded-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+            className="flex-1 rounded-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
           >
             Accept
           </Button>

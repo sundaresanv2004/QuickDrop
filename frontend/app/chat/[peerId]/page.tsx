@@ -103,9 +103,7 @@ export default function ChatPage() {
         onGoBack={handleLeave}
       />
 
-      <MessageList messages={messages} isTyping={isTyping} />
-
-      <TypingIndicator isTyping={isTyping} peerName={peerName} />
+      <MessageList messages={messages} isTyping={isTyping} peerName={peerName} />
 
       <MessageInput
         onSendMessage={handleSendMessage}

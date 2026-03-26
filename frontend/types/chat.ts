@@ -30,6 +30,9 @@ export interface ChatMessage {
 
   // Only for type === "file"
   file?: FileInfo
+
+  // Emoji Reactions: { "👍": ["device-id-1", "device-id-2"], ... }
+  reactions?: Record<string, string[]>
 }
 
 // ─── In-progress file being received (stored separately, not in messages) ───
@@ -77,5 +80,12 @@ export type SystemPayload =
   | TypingPayload
   | ByePayload
 
+export interface ReactionMessagePayload {
+  type:      "reaction_message"
+  messageId: string
+  emoji:     string
+  fromId:    string   // The device ID of the person who reacted
+}
+
 // Union of all chat channel payloads
-export type ChatPayload = TextMessagePayload
+export type ChatPayload = TextMessagePayload | ReactionMessagePayload

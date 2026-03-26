@@ -14,27 +14,26 @@ export default function TypingIndicator({
   if (!isTyping) return null
 
   return (
-    <div className="px-4 py-2 border-t bg-background shrink-0">
-      <div className="flex items-center gap-2">
-        {/* Animated dot group */}
-        <div className="flex items-center gap-1 h-4">
-          <span
-            className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-            style={{ animationDelay: "0ms", animationDuration: "1s" }}
-          />
-          <span
-            className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-            style={{ animationDelay: "200ms", animationDuration: "1s" }}
-          />
-          <span
-            className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
-            style={{ animationDelay: "400ms", animationDuration: "1s" }}
-          />
+    <div className="py-2 shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex flex-col gap-1 items-start">
+        <div className="px-3 py-2.5 rounded-2xl rounded-bl-sm bg-muted shadow-sm flex items-center justify-center">
+          <div className="flex gap-1.5">
+            <div 
+              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse" 
+              style={{ animationDelay: "0ms" }}
+            />
+            <div 
+              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse" 
+              style={{ animationDelay: "150ms" }}
+            />
+            <div 
+              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-pulse" 
+              style={{ animationDelay: "300ms" }}
+            />
+          </div>
         </div>
-
-        {/* Text label */}
-        <span className="text-xs text-muted-foreground">
-          {peerName} is typing
+        <span className="text-[10px] text-muted-foreground/60 ml-1 font-medium italic">
+          {peerName} is typing...
         </span>
       </div>
     </div>

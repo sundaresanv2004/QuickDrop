@@ -1,9 +1,15 @@
 "use client"
 
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowLeft01Icon } from '@hugeicons/core-free-icons'
+import { 
+  ArrowLeft01Icon,
+  WifiConnected01Icon,
+  Loading03Icon,
+  WifiDisconnected01Icon,
+} from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 import type { ConnectionStatus } from "@/context/WebRTCContext"
 
 interface ChatHeaderProps {
@@ -12,36 +18,81 @@ interface ChatHeaderProps {
   onLeave: () => void
 }
 
+const statusConfig = {
+  connected: {
+    label:    "Live",
+    dotClass: "bg-green-500 animate-pulse",
+    icon:     WifiConnected01Icon,
+    variant:  "default" as const,
+  },
+  connecting: {
+    label:    "Connecting",
+    dotClass: "bg-yellow-500 animate-pulse",
+    icon:     Loading03Icon,
+    variant:  "secondary" as const,
+  },
+  disconnected: {
+    label:    "Offline",
+    dotClass: "bg-red-500",
+    icon:     WifiDisconnected01Icon,
+    variant:  "destructive" as const,
+  },
+  rejected: {
+    label:    "Rejected",
+    dotClass: "bg-red-500",
+    icon:     WifiDisconnected01Icon,
+    variant:  "destructive" as const,
+  },
+  idle: {
+    label:    "Idle",
+    dotClass: "bg-gray-400",
+    icon:     WifiDisconnected01Icon,
+    variant:  "secondary" as const,
+  },
+  requesting: {
+    label:    "Requesting",
+    dotClass: "bg-yellow-500 animate-pulse",
+    icon:     Loading03Icon,
+    variant:  "secondary" as const,
+  },
+  receiving: {
+    label:    "Incoming",
+    dotClass: "bg-blue-500 animate-pulse",
+    icon:     Loading03Icon,
+    variant:  "secondary" as const,
+  },
+}
+
 export default function ChatHeader({ peerName, connectionStatus, onLeave }: ChatHeaderProps) {
+  const config = statusConfig[connectionStatus] ?? statusConfig.idle
+
   return (
-    <header className="flex items-center justify-between px-4 py-3 border-b bg-background sticky top-0 z-10">
+    <header className="flex items-center justify-between px-4 py-3 border-b bg-background sticky top-0 z-10 w-full">
       <Button variant="ghost" size="icon" onClick={onLeave}>
-        <HugeiconsIcon icon={ArrowLeft01Icon} className="size-5" />
+        <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color="currentColor" />
       </Button>
 
       <div className="flex flex-col items-center">
         <span className="font-semibold text-sm">{peerName}</span>
-        <span className="text-xs text-muted-foreground">
-          End-to-end encrypted
+        <span className="text-[10px] text-muted-foreground leading-tight">
+          {connectionStatus === "connected"
+            ? "End-to-end encrypted"
+            : connectionStatus === "connecting"
+            ? "Establishing connection..."
+            : "Connection lost"}
         </span>
       </div>
 
-      {connectionStatus === "connected" ? (
-        <Badge variant="default" className="gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          Live
+      <div className="flex items-center gap-1.5">
+        <span className={cn(
+          "w-1.5 h-1.5 rounded-full flex-shrink-0",
+          config.dotClass
+        )} />
+        <Badge variant={config.variant} className="text-[10px] px-1.5 py-0 font-medium">
+          {config.label}
         </Badge>
-      ) : connectionStatus === "connecting" ? (
-        <Badge variant="secondary" className="gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-          Connecting
-        </Badge>
-      ) : (
-        <Badge variant="destructive" className="gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-          Offline
-        </Badge>
-      )}
+      </div>
     </header>
   )
 }
+

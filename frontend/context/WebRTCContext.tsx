@@ -17,6 +17,9 @@ export type ConnectionStatus =
 
 import { toast } from 'sonner';
 
+const CHUNK_SIZE = 64 * 1024;          // 64KB per chunk
+const MAX_BUFFERED_AMOUNT = 1024 * 1024;  // 1MB backpressure threshold
+
 interface WebRTCContextType {
   wsConnected: boolean;
   myDeviceId: string | null;
@@ -56,6 +59,7 @@ interface WebRTCContextType {
   clearMessages: () => void;
   sendChatMessage: (content: string) => void;
   sendSystemMessage: (payload: SystemPayload) => void;
+  sendFile: (file: File) => Promise<void>;
 }
 
 const WebRTCContext = createContext<WebRTCContextType | null>(null);
@@ -117,6 +121,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const fileRef      = useRef<RTCDataChannel | null>(null);
   const systemRef    = useRef<RTCDataChannel | null>(null);
   const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
+  const fileTransferQueueRef = useRef<string[]>([]);
 
   const handleWelcome = useCallback((msg: WelcomeMessage) => {
     setMyDeviceId(msg.device_id);
@@ -201,6 +206,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fileRef.current   = null;
     systemRef.current = null;
     pcRef.current     = null;
+    fileTransferQueueRef.current = [];
   }, []);
 
   const addMessage = useCallback((message: ChatMessage) => {
@@ -208,10 +214,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const clearMessages = useCallback(() => {
-    setMessages([]);
-    setIsTyping(false);
-    setPendingFiles(new Map());
-  }, []);
+    // Revoke all objectURLs before clearing to prevent memory leaks
+    setMessages(prev => {
+      prev.forEach(msg => {
+        if (msg.type === "file" && msg.file?.objectUrl) {
+          URL.revokeObjectURL(msg.file.objectUrl)
+        }
+      })
+      return []
+    })
+    setIsTyping(false)
+    setPendingFiles(new Map())
+  }, [])
 
   const handleSystemMessage = useCallback((raw: string) => {
     try {
@@ -256,6 +270,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
           console.log("[SYSTEM] File incoming:", payload.name, 
             `(${payload.totalChunks} chunks)`);
+          
+          fileTransferQueueRef.current.push(payload.fileId);
           break;
         }
 
@@ -270,9 +286,10 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           break;
 
         case "bye":
-          setConnectionStatus("disconnected");
-          console.log("[SYSTEM] Peer sent bye — disconnecting");
-          break;
+          setConnectionStatus("disconnected")
+          setIsTyping(false)
+          console.log("[SYSTEM] Peer sent bye — disconnecting")
+          break
 
         default:
           console.warn("[SYSTEM] Unknown system message:", payload);
@@ -339,9 +356,21 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       if (label === "files") {
-        // event.data is ArrayBuffer — binary chunk
+        // If binaryType is correctly set, data will always be 
+        // ArrayBuffer. This guard is a safety net.
+        if (event.data instanceof Blob) {
+          // This should never happen if binaryType = "arraybuffer" 
+          // is set correctly. Log it as a hard error.
+          console.error(
+            "[FILES] Received Blob instead of ArrayBuffer.",
+            "binaryType was not set correctly on the files channel.",
+            "Fix: set channel.binaryType = 'arraybuffer' after channel creation."
+          );
+          return;
+        }
+
         if (!(event.data instanceof ArrayBuffer)) {
-          console.warn("[FILES] Expected ArrayBuffer but got:", typeof event.data);
+          console.warn("[FILES] Unexpected data type:", typeof event.data);
           return;
         }
 
@@ -349,25 +378,23 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // pendingFiles — the file_meta (sent on system channel) always 
         // arrives before any binary chunks because system channel is 
         // ordered and files channel is ordered too.
-        // We pick the oldest pending transfer that is still "receiving".
+        // Get the active transfer from the front of the queue
+        const activeFileId = fileTransferQueueRef.current[0];
+        if (!activeFileId) {
+          console.warn("[FILES] Received chunk but transfer queue is empty");
+          return;
+        }
+
         setPendingFiles(prev => {
           const updated = new Map(prev);
+          const transfer = updated.get(activeFileId);
 
-          // Find the first pending transfer still in progress
-          let targetId: string | null = null;
-          for (const [id, transfer] of updated) {
-            if (transfer.received < transfer.meta.totalChunks) {
-              targetId = id;
-              break;
-            }
-          }
-
-          if (!targetId) {
-            console.warn("[FILES] Received chunk but no pending transfer found");
+          if (!transfer) {
+            console.warn("[FILES] No pending transfer for:", activeFileId);
             return prev;
           }
 
-          const transfer = updated.get(targetId)!;
+          // Add chunk
           transfer.chunks.push(event.data as ArrayBuffer);
           transfer.received += 1;
 
@@ -375,19 +402,24 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             (transfer.received / transfer.meta.totalChunks) * 100
           );
 
-          // Update progress on the corresponding message in messages state
+          // Update progress on receiver bubble
           setMessages(msgs => msgs.map(msg => {
-            if (msg.type === "file" && msg.file?.fileId === targetId) {
-              return {
-                ...msg,
-                file: { ...msg.file, progress }
+            if (msg.type === "file" && msg.file?.fileId === activeFileId) {
+              return { 
+                ...msg, 
+                file: { ...msg.file!, progress } 
               };
             }
             return msg;
           }));
 
-          // Check if transfer is complete
+          console.log(
+            `[FILES] Chunk ${transfer.received}/${transfer.meta.totalChunks} (${progress}%)`
+          );
+
+          // Check completion
           if (transfer.received === transfer.meta.totalChunks) {
+            // Reassemble
             const blob = new Blob(transfer.chunks, {
               type: transfer.meta.mimeType
             });
@@ -395,11 +427,11 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
             // Mark complete on the message
             setMessages(msgs => msgs.map(msg => {
-              if (msg.type === "file" && msg.file?.fileId === targetId) {
+              if (msg.type === "file" && msg.file?.fileId === activeFileId) {
                 return {
                   ...msg,
                   file: {
-                    ...msg.file,
+                    ...msg.file!,
                     status: "complete" as const,
                     progress: 100,
                     objectUrl,
@@ -409,9 +441,12 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               return msg;
             }));
 
-            // Remove from pending
-            updated.delete(targetId!);
-            console.log("[FILES] Transfer complete:", transfer.meta.name);
+            // Remove from pending and queue
+            updated.delete(activeFileId);
+            fileTransferQueueRef.current.shift();
+            
+            console.log("[FILES] Reassembled:", transfer.meta.name, 
+              `(${(blob.size / 1024).toFixed(1)} KB)`);
           }
 
           return updated;
@@ -478,6 +513,134 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     systemRef.current.send(JSON.stringify(payload));
   }, []);
 
+  const sendFile = useCallback(async (file: File) => {
+    // ─── 1. Guards ───
+    if (!fileRef.current || fileRef.current.readyState !== "open") {
+      console.warn("[FILES] Cannot send — file channel not open")
+      return
+    }
+    if (!systemRef.current || systemRef.current.readyState !== "open") {
+      console.warn("[FILES] Cannot send — system channel not open")
+      return
+    }
+
+    // ─── 2. Prepare metadata ───
+    const fileId      = crypto.randomUUID()
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+    // ─── 3. Send file_meta on system channel FIRST ───
+    const meta: FileMetaPayload = {
+      type:        "file_meta",
+      fileId,
+      name:        file.name,
+      size:        file.size,
+      mimeType:    file.type || "application/octet-stream",
+      totalChunks,
+    }
+    systemRef.current.send(JSON.stringify(meta))
+    console.log("[FILES] Sent file_meta:", file.name, `(${totalChunks} chunks)`)
+
+    // ─── 4. Add sending bubble to local messages ───
+    const messageId = crypto.randomUUID()
+    const fileMessage: ChatMessage = {
+      id:        messageId,
+      type:      "file",
+      direction: "sent",
+      timestamp: Date.now(),
+      file: {
+        fileId,
+        name:      file.name,
+        size:      file.size,
+        mimeType:  file.type || "application/octet-stream",
+        status:    "sending",
+        progress:  0,
+        objectUrl: null,
+      }
+    }
+    addMessage(fileMessage)
+
+    // ─── 5. Read entire file as ArrayBuffer ───
+    const arrayBuffer = await file.arrayBuffer()
+
+    // ─── 6. Send chunks with backpressure control ───
+    let offset      = 0
+    let chunkIndex  = 0
+
+    while (offset < arrayBuffer.byteLength) {
+      // Backpressure: if buffer is full, wait for it to drain
+      if (fileRef.current.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            if (
+              !fileRef.current ||
+              fileRef.current.bufferedAmount <= MAX_BUFFERED_AMOUNT
+            ) {
+              resolve()
+            } else {
+              setTimeout(check, 50)   // poll every 50ms
+            }
+          }
+          check()
+        })
+      }
+
+      // Safety: channel may have closed while we were waiting
+      if (!fileRef.current || fileRef.current.readyState !== "open") {
+        console.warn("[FILES] Channel closed during transfer — aborting")
+        // Update local bubble to error state
+        setMessages(msgs => msgs.map(msg => {
+          if (msg.type === "file" && msg.file?.fileId === fileId) {
+            return { ...msg, file: { ...msg.file!, status: "error" as const } }
+          }
+          return msg
+        }))
+        return
+      }
+
+      // Slice and send the chunk
+      const end   = Math.min(offset + CHUNK_SIZE, arrayBuffer.byteLength)
+      const chunk = arrayBuffer.slice(offset, end)
+      fileRef.current.send(chunk)
+
+      offset     += chunk.byteLength
+      chunkIndex += 1
+
+      // Update progress on the local sender bubble
+      const progress = Math.round((chunkIndex / totalChunks) * 100)
+      setMessages(msgs => msgs.map(msg => {
+        if (msg.type === "file" && msg.file?.fileId === fileId) {
+          return {
+            ...msg,
+            file: { ...msg.file!, progress }
+          }
+        }
+        return msg
+      }))
+    }
+
+    // ─── 7. Mark as complete on sender side ───
+    const objectUrl = URL.createObjectURL(
+      new Blob([arrayBuffer], { type: file.type })
+    )
+
+    setMessages(msgs => msgs.map(msg => {
+      if (msg.type === "file" && msg.file?.fileId === fileId) {
+        return {
+          ...msg,
+          file: {
+            ...msg.file!,
+            status:    "complete" as const,
+            progress:  100,
+            objectUrl,
+          }
+        }
+      }
+      return msg
+    }))
+
+    console.log("[FILES] Transfer complete:", file.name)
+  }, [addMessage])
+
   const initializePeerConnection = useCallback((isInitiator: boolean) => {
     // ─── 1. Create the RTCPeerConnection ───
     const pc = new RTCPeerConnection({
@@ -493,6 +656,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (isInitiator) {
       const chat   = pc.createDataChannel("chat",   { ordered: true });
       const files  = pc.createDataChannel("files",  { ordered: true });
+      files.binaryType = "arraybuffer";
       const system = pc.createDataChannel("system", { ordered: true });
 
       chatRef.current   = chat;
@@ -512,6 +676,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setupDataChannelListeners(channel, "chat");
       }
       if (channel.label === "files")  {
+        channel.binaryType = "arraybuffer";
         fileRef.current = channel;
         setupDataChannelListeners(channel, "files");
       }
@@ -556,6 +721,25 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         pc.connectionState === "closed"
       ) {
         setConnectionStatus("disconnected");
+        setIsTyping(false);
+
+        // Mark all in-progress received file bubbles as error
+        setMessages(msgs => msgs.map(msg => {
+          if (
+            msg.type === "file" &&
+            msg.direction === "received" &&
+            msg.file?.status === "receiving"
+          ) {
+            return {
+              ...msg,
+              file: { ...msg.file!, status: "error" as const }
+            };
+          }
+          return msg;
+        }));
+
+        // Clear the transfer queue
+        fileTransferQueueRef.current = [];
       }
     };
 
@@ -761,6 +945,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       clearMessages,
       sendChatMessage,
       sendSystemMessage,
+      sendFile,
     }}>
       {children}
     </WebRTCContext.Provider>

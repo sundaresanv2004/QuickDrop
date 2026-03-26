@@ -17,8 +17,9 @@ export default function RequestingModal() {
       <DialogContent showCloseButton={false} className="max-w-[340px]">
         <DialogHeader className="items-center text-center pt-4">
           <div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4 relative">
-             <div className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-             <HugeiconsIcon icon={Loading03Icon} className="w-8 h-8 text-primary/40" />
+              <div className="flex items-center justify-center p-3 rounded-full bg-primary/10 mb-4 animate-pulse">
+                <HugeiconsIcon icon={Loading03Icon} size={32} color="currentColor" className="animate-spin text-primary" />
+              </div>
           </div>
           <DialogTitle className="text-2xl font-bold">Connecting...</DialogTitle>
           <DialogDescription className="text-balance text-muted-foreground/80 pt-2">

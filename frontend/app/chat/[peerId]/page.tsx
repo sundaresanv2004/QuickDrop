@@ -7,6 +7,7 @@ import ChatHeader from "@/components/chat/ChatHeader"
 import MessageList from "@/components/chat/MessageList"
 import TypingIndicator from "@/components/chat/TypingIndicator"
 import MessageInput from "@/components/chat/MessageInput"
+import DisconnectBanner from "@/components/chat/DisconnectBanner"
 
 export default function ChatPage() {
   const router = useRouter()
@@ -22,22 +23,37 @@ export default function ChatPage() {
     sendChatMessage,
     sendSystemMessage,
     resetConnection,
+    sendFile,
   } = useWebRTC()
 
   // ─── Guard: redirect if no active connection ───
   useEffect(() => {
     if (
       connectionStatus !== "connected" &&
-      connectionStatus !== "connecting"
+      connectionStatus !== "connecting" &&
+      connectionStatus !== "disconnected"
     ) {
       router.replace("/")
     }
   }, [connectionStatus, router])
 
+  const handleBeforeUnload = () => {
+    sendSystemMessage({ type: "bye" })
+  }
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    }
+  }, [sendSystemMessage])
+
   const peerName =
     peers.find(p => p.device_id === peerId)?.device_name ?? "Unknown Device"
 
-  const isChannelOpen = chatChannel?.readyState === "open"
+  const isChannelOpen = 
+    chatChannel?.readyState === "open" && 
+    connectionStatus === "connected"
 
   const handleLeave = () => {
     sendSystemMessage({ type: "bye" })
@@ -49,9 +65,26 @@ export default function ChatPage() {
     sendChatMessage(content)
   }
 
+  const MAX_FILE_SIZE = 500 * 1024 * 1024   // 500MB limit
+
   const handleFileSelect = (file: File) => {
-    console.log("[FILE] Selected:", file.name)
-    // TODO Step 8: implement file send
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`File too large. Maximum size is 500MB.\nSelected: ${
+        (file.size / 1024 / 1024).toFixed(1)
+      }MB`)
+      return
+    }
+    sendFile(file).catch(err => {
+      console.error("[FILES] Send failed:", err)
+    })
+  }
+
+  const handleTypingStart = () => {
+    sendSystemMessage({ type: "typing_start" })
+  }
+
+  const handleTypingStop = () => {
+    sendSystemMessage({ type: "typing_stop" })
   }
 
   return (
@@ -62,15 +95,23 @@ export default function ChatPage() {
         onLeave={handleLeave}
       />
 
-      <MessageList messages={messages} />
+      <DisconnectBanner 
+        connectionStatus={connectionStatus}
+        onGoBack={handleLeave}
+      />
+
+      <MessageList messages={messages} isTyping={isTyping} />
 
       <TypingIndicator isTyping={isTyping} peerName={peerName} />
 
       <MessageInput
         onSendMessage={handleSendMessage}
         onFileSelect={handleFileSelect}
+        onTypingStart={handleTypingStart}
+        onTypingStop={handleTypingStop}
         disabled={!isChannelOpen}
       />
     </div>
   )
 }
+

@@ -4,11 +4,11 @@ import { WifiDisconnected01Icon } from "@hugeicons/core-free-icons";
 export default function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center text-center p-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="relative mb-8">
+      <div className="relative mb-6">
         {/* Soft ambient glow */}
-        <div className="absolute inset-0 rounded-full bg-primary/5 blur-3xl scale-[2]" />
-        <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-secondary/80 to-secondary/40 flex items-center justify-center border border-border/30 shadow-lg">
-          <HugeiconsIcon icon={WifiDisconnected01Icon} className="w-11 h-11 text-muted-foreground/30" />
+        <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
+        <div className="relative flex items-center justify-center w-20 h-20 rounded-full bg-background border border-border shadow-sm">
+          <HugeiconsIcon icon={WifiDisconnected01Icon} size={32} color="currentColor" className="text-muted-foreground" />
         </div>
       </div>
       <h3 className="text-2xl font-semibold mb-3 text-foreground/50 tracking-tight">

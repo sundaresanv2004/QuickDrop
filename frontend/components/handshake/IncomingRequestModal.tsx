@@ -14,13 +14,13 @@ export default function IncomingRequestModal() {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-background p-6 pb-10 sm:pb-6 shadow-xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) rejectRequest() }}>
+      <DialogContent showCloseButton={false} className="max-w-[340px] p-6 gap-0">
         <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
              <HugeiconsIcon icon={Wifi01Icon} className="w-8 h-8 text-primary" />
           </div>
-          <h2 className="text-2xl font-bold text-foreground">Incoming Request</h2>
+          <DialogTitle className="text-xl font-bold text-foreground">Incoming Request</DialogTitle>
           <p className="text-balance text-muted-foreground/80 pt-2 text-sm">
             <span className="font-semibold text-foreground">{incomingRequest?.peerName || "A nearby device"}</span> wants to share files with you.
           </p>
@@ -41,8 +41,8 @@ export default function IncomingRequestModal() {
             Accept
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

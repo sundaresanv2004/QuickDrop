@@ -4,14 +4,22 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useWebRTC } from "@/context/WebRTCContext"
 import { getDeviceIcon } from "@/components/discovery/PeerBubble"
+import { generateFullRandomName } from "@/lib/device"
 import StatusBar from "@/components/discovery/StatusBar"
 import PeerBubble from "@/components/discovery/PeerBubble"
 import EmptyState from "@/components/discovery/EmptyState"
 import RequestingModal from "@/components/handshake/RequestingModal"
 import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Loading03Icon, PencilEdit02Icon } from "@hugeicons/core-free-icons"
+import { Loading03Icon, PencilEdit02Icon, CheckmarkCircle01Icon, Cancel01Icon, ShuffleIcon } from "@hugeicons/core-free-icons"
 import Image from "next/image"
+import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // 30 predefined scattered positions (x, y as percentages)
 // Manually distributed perfectly across the screen so they never overlap.
@@ -143,49 +151,85 @@ export default function DiscoveryPage() {
 
       {/* My device — bottom center */}
       <div className="pb-8 pt-4 z-10">
-        <div className="flex flex-col items-center gap-2 group">
+        <div className="flex flex-col items-center gap-1.5 group">
           <div className="relative">
             <div className="absolute -inset-1 rounded-full bg-primary/5 blur-lg opacity-50" />
-            <div className="relative w-14 h-14 rounded-full bg-secondary/50 backdrop-blur-sm flex items-center justify-center border border-border/30 shadow-md transition-shadow duration-300 group-hover:shadow-lg">
-              <HugeiconsIcon icon={getDeviceIcon(myDeviceName, myDeviceType)} className="w-6 h-6 text-foreground/40" />
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-secondary/50 backdrop-blur-sm flex items-center justify-center border border-border/30 shadow-md transition-shadow duration-300 group-hover:shadow-lg">
+              <HugeiconsIcon icon={getDeviceIcon(myDeviceName, myDeviceType)} className="w-6 h-6 sm:w-7 sm:h-7 text-foreground/40" />
             </div>
           </div>
 
-          <div className="h-6 flex items-center justify-center mt-1 z-20">
+          <div className="h-10 flex items-center justify-center z-20">
             {isEditingName ? (
-              <input
-                type="text"
-                autoFocus
-                value={editNameValue}
-                onChange={(e) => setEditNameValue(e.target.value)}
-                onKeyDown={handleNameKeyDown}
-                onBlur={handleNameSave}
-                className="text-[11px] font-medium text-foreground text-center bg-background border border-primary/40 rounded-full px-2 py-0.5 w-32 outline-none focus:ring-1 focus:ring-primary shadow-sm"
-                placeholder="Name..."
-              />
-            ) : (
-              <div className="flex items-center gap-1.5 cursor-pointer" onClick={handleNameEdit}>
-                <span className="text-xs font-medium text-foreground/50 max-w-[150px] text-center truncate group-hover:text-foreground/80 transition-colors" title={myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}>
-                  {myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}
-                </span>
-                {myDeviceId && (
+              <div className="flex items-center gap-2 animate-in zoom-in-95 duration-200">
+                <div className="relative flex items-center">
+                  <Input
+                    type="text"
+                    autoFocus
+                    value={editNameValue}
+                    onChange={(e) => setEditNameValue(e.target.value)}
+                    onKeyDown={handleNameKeyDown}
+                    className="text-xs sm:text-sm font-medium text-center h-8 sm:h-9 w-40 sm:w-48 bg-background/80 backdrop-blur-sm border-primary/50 focus-visible:ring-primary/20 pr-10"
+                    placeholder="Device name..."
+                  />
                   <button
-                    className="p-1 rounded-full text-foreground/30 hover:text-primary hover:bg-primary/10 transition-colors opacity-0 group-hover:opacity-100"
-                    aria-label="Edit name"
+                    onClick={() => setEditNameValue(generateFullRandomName())}
+                    className="absolute right-2 p-1.5 rounded-full text-foreground/40 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer"
+                    title="Randomize name"
                   >
-                    <HugeiconsIcon icon={PencilEdit02Icon} size={12} />
+                    <HugeiconsIcon icon={ShuffleIcon} size={14} />
                   </button>
-                )}
+                </div>
+                <div className="flex items-center gap-1.5 ml-1">
+                  <button
+                    onClick={handleNameSave}
+                    className="p-2 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-md cursor-pointer flex items-center justify-center transform active:scale-90"
+                    title="Save (Enter)"
+                  >
+                    <HugeiconsIcon icon={CheckmarkCircle01Icon} size={14} className="stroke-[2.5px]" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingName(false)}
+                    className="p-2 rounded-full bg-secondary text-secondary-foreground/80 hover:bg-secondary-foreground/10 hover:text-secondary-foreground transition-all shadow-sm cursor-pointer flex items-center justify-center transform active:scale-90"
+                    title="Cancel (Esc)"
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} size={14} className="stroke-[2.5px]" />
+                  </button>
+                </div>
               </div>
+            ) : (
+              <TooltipProvider>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="flex items-center gap-2 cursor-pointer py-1 px-3 rounded-full hover:bg-secondary/50 transition-all group/name border border-transparent hover:border-border/50"
+                      onClick={handleNameEdit}
+                    >
+                      <span className="text-xs sm:text-sm font-semibold text-foreground/60 group-hover/name:text-foreground max-w-[150px] sm:max-w-[200px] text-center truncate transition-colors" title={myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}>
+                        {myDeviceId ? `${myDeviceName} (You)` : "Connecting..."}
+                      </span>
+                      {myDeviceId && (
+                        <HugeiconsIcon
+                          icon={PencilEdit02Icon}
+                          className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-foreground/30 group-hover/name:text-primary transition-colors opacity-0 group-hover/name:opacity-100"
+                        />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-secondary text-foreground border border-border shadow-lg">
+                    <p className="font-medium">Click to change device name</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         </div>
       </div>
 
       {/* Logo + Brand — top left */}
-      <div className="fixed top-6 left-6 z-50 flex items-center gap-2.5 opacity-60 hover:opacity-100 transition-opacity duration-300">
-        <Image src="/logo.png" alt="QuickDrop" width={28} height={28} className="rounded-md" />
-        <span className="text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
+      <div className="fixed top-4 left-4 sm:top-6 sm:left-6 z-50 flex items-center gap-2 sm:gap-2.5 opacity-60 hover:opacity-100 transition-opacity duration-300">
+        <Image src="/logo.png" alt="QuickDrop" width={24} height={24} className="rounded-md sm:w-[28px] sm:h-[28px]" />
+        <span className="text-xs sm:text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
       </div>
 
 

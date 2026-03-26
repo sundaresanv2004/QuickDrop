@@ -50,13 +50,17 @@ export function setDeviceName(newName: string): string {
   if (typeof window === "undefined") return "Unknown Device";
   const trimmed = newName.trim();
   if (!trimmed) {
-    const os = getOSLabel();
-    const generated = `${generateRandomName()}'s ${os}`;
+    const generated = generateFullRandomName();
     localStorage.setItem(STORAGE_KEY, generated);
     return generated;
   }
   localStorage.setItem(STORAGE_KEY, trimmed);
   return trimmed;
+}
+
+export function generateFullRandomName(): string {
+  const os = getOSLabel();
+  return `${generateRandomName()}'s ${os}`;
 }
 export function getDeviceType(): string {
   if (typeof navigator === "undefined") return "unknown";

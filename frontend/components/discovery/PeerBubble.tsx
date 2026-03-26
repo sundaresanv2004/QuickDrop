@@ -33,10 +33,10 @@ export default function PeerBubble({ peer, onClick, disabled }: PeerBubbleProps)
         {/* Glow */}
         <div className="absolute -inset-1 rounded-full bg-primary/5 opacity-0 group-hover:opacity-100 blur-lg transition-opacity duration-500 pointer-events-none" />
         {/* Main circle */}
-        <div className="relative w-16 h-16 rounded-full bg-secondary/60 backdrop-blur-sm flex items-center justify-center border border-border/30 shadow-md group-hover:border-primary/30 group-hover:shadow-primary/10 group-hover:shadow-xl transition-all duration-300">
+        <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-secondary/60 backdrop-blur-sm flex items-center justify-center border border-border/30 shadow-md group-hover:border-primary/30 group-hover:shadow-primary/10 group-hover:shadow-xl transition-all duration-300">
           <HugeiconsIcon
             icon={getDeviceIcon(peer.device_name, peer.device_type)}
-            className="w-7 h-7 text-muted-foreground/60 group-hover:text-primary transition-colors duration-300"
+            className="w-6 h-6 sm:w-7 sm:h-7 text-muted-foreground/60 group-hover:text-primary transition-colors duration-300"
           />
         </div>
       </div>

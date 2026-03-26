@@ -14,21 +14,26 @@ export default function RequestingModal() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) cancelRequest() }}>
-      <DialogContent showCloseButton={false} className="max-w-[340px]">
-        <DialogHeader className="items-center text-center pt-4">
+      <DialogContent showCloseButton={false} className="max-w-[320px] p-6 gap-0">
+        <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
             <HugeiconsIcon icon={Loading03Icon} size={32} color="currentColor" className="animate-spin text-primary" />
           </div>
-          <DialogTitle className="text-2xl font-bold">Connecting...</DialogTitle>
-          <DialogDescription className="text-balance text-muted-foreground/80 pt-2">
+          <DialogTitle className="text-xl font-bold text-foreground">Connecting...</DialogTitle>
+          <p className="text-balance text-muted-foreground/80 pt-2 text-sm">
             Waiting for <span className="font-semibold text-foreground">{targetPeer?.device_name || "the other device"}</span> to accept your request.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="sm:justify-center pb-2">
-          <Button variant="outline" onClick={cancelRequest} className="rounded-full px-10 h-11 transition-colors hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30">
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center mt-6">
+          <Button 
+            variant="outline" 
+            onClick={cancelRequest} 
+            className="w-full rounded-full h-11 transition-colors hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
+          >
             Cancel
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

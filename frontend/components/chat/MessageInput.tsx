@@ -2,9 +2,15 @@
 
 import { useEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from '@hugeicons/react'
-import { AttachmentIcon, SentIcon } from "@hugeicons/core-free-icons"
+import { AttachmentIcon, SentIcon, File01Icon, Image01Icon } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface MessageInputProps {
   onSendMessage: (content: string) => void
@@ -23,6 +29,7 @@ export default function MessageInput({
 }: MessageInputProps) {
   const [value, setValue] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mediaInputRef = useRef<HTMLInputElement>(null)
   const isTypingRef = useRef<boolean>(false)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -60,19 +67,58 @@ export default function MessageInput({
 
   return (
     <div className="flex items-end gap-2 px-3 sm:px-4 py-3 border-t bg-background sticky bottom-0">
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="h-11 w-11 sm:h-9 sm:w-9 shrink-0 text-muted-foreground hover:text-primary"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={disabled}
-      >
-        <HugeiconsIcon icon={AttachmentIcon} className="w-5 h-5 sm:w-5 sm:h-5" color="currentColor" />
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-11 w-11 sm:h-9 sm:w-9 shrink-0 text-muted-foreground hover:text-primary rounded-full transition-transform active:scale-95"
+            disabled={disabled}
+          >
+            <HugeiconsIcon icon={AttachmentIcon} className="w-5 h-5 sm:w-5.5 sm:h-5.5 -rotate-45" color="currentColor" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side="top" className="mb-2 min-w-[200px] rounded-2xl bg-popover/90 backdrop-blur-xl border-border/50 shadow-2xl p-1.5">
+          <DropdownMenuItem 
+            className="flex items-center gap-3 p-2.5 cursor-pointer focus:bg-accent/50 rounded-xl transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
+              <HugeiconsIcon icon={File01Icon} size={20} strokeWidth={2.5} />
+            </div>
+            <span className="font-medium text-foreground/80">File</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem 
+            className="flex items-center gap-3 p-2.5 cursor-pointer focus:bg-accent/50 rounded-xl transition-colors"
+            onClick={() => mediaInputRef.current?.click()}
+          >
+            <div className="w-9 h-9 rounded-xl bg-sky-400 flex items-center justify-center text-white shadow-sm shadow-sky-400/20">
+              <HugeiconsIcon icon={Image01Icon} size={20} strokeWidth={2.5} />
+            </div>
+            <span className="font-medium text-foreground/80">Photos and videos</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <input
         type="file"
         ref={fileInputRef}
+        accept="*/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            onFileSelect(file)
+            e.target.value = ""
+          }
+        }}
+      />
+      <input
+        type="file"
+        ref={mediaInputRef}
+        accept="image/*,video/*"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

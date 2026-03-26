@@ -31,7 +31,8 @@ export default function ChatPage() {
     if (
       connectionStatus !== "connected" &&
       connectionStatus !== "connecting" &&
-      connectionStatus !== "disconnected"
+      connectionStatus !== "disconnected" &&
+      connectionStatus !== "left"
     ) {
       router.replace("/")
     }

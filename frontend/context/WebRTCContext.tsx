@@ -14,6 +14,7 @@ export type ConnectionStatus =
   | "connected"      // DataChannels are open (Phase 4)
   | "rejected"       // The other device rejected our request
   | "disconnected"   // Connection was lost after being established
+  | "left"           // The other device gracefully left the chat
 
 import { toast } from 'sonner';
 
@@ -287,7 +288,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           break;
 
         case "bye":
-          setConnectionStatus("disconnected")
+          setConnectionStatus("left")
           setIsTyping(false)
           break
 
@@ -705,7 +706,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         pc.connectionState === "failed" ||
         pc.connectionState === "closed"
       ) {
-        setConnectionStatus("disconnected");
+        setConnectionStatus(prev => prev === "left" ? "left" : "disconnected");
         setIsTyping(false);
 
         // Mark all in-progress received file bubbles as error

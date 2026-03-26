@@ -16,10 +16,8 @@ export default function RequestingModal() {
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) cancelRequest() }}>
       <DialogContent showCloseButton={false} className="max-w-[340px]">
         <DialogHeader className="items-center text-center pt-4">
-          <div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4 relative">
-              <div className="flex items-center justify-center p-3 rounded-full bg-primary/10 mb-4 animate-pulse">
-                <HugeiconsIcon icon={Loading03Icon} size={32} color="currentColor" className="animate-spin text-primary" />
-              </div>
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <HugeiconsIcon icon={Loading03Icon} size={32} color="currentColor" className="animate-spin text-primary" />
           </div>
           <DialogTitle className="text-2xl font-bold">Connecting...</DialogTitle>
           <DialogDescription className="text-balance text-muted-foreground/80 pt-2">

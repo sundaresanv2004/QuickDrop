@@ -6,6 +6,7 @@ import {
   ArrowLeft01Icon,
 } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import type { ConnectionStatus } from "@/context/WebRTCContext"
 
 interface DisconnectBannerProps {
@@ -14,24 +15,32 @@ interface DisconnectBannerProps {
 }
 
 export default function DisconnectBanner({ connectionStatus, onGoBack }: DisconnectBannerProps) {
-  if (connectionStatus !== "disconnected") return null
+  if (connectionStatus !== "disconnected" && connectionStatus !== "left") return null
+
+  const isLeft = connectionStatus === "left"
 
   return (
-    <div className="w-full bg-destructive/10 border-b border-destructive/20 px-4 py-2.5 flex items-center justify-between gap-3 animate-in slide-in-from-top duration-300">
+    <div className={cn(
+      "w-full border-b flex items-center justify-between gap-3 px-4 py-2.5 animate-in slide-in-from-top duration-300",
+      isLeft ? "bg-muted/50 border-border" : "bg-destructive/10 border-destructive/20"
+    )}>
       {/* Left: icon + message */}
       <div className="flex items-center gap-2">
         <HugeiconsIcon
           icon={WifiDisconnected01Icon}
           size={16}
           color="currentColor"
-          className="text-destructive flex-shrink-0"
+          className={cn("flex-shrink-0", isLeft ? "text-muted-foreground" : "text-destructive")}
         />
         <div className="flex flex-col">
-          <span className="text-sm font-medium text-destructive leading-tight">
-            Connection lost
+          <span className={cn(
+            "text-sm font-medium leading-tight",
+            isLeft ? "text-foreground" : "text-destructive"
+          )}>
+            {isLeft ? "User left the chat" : "Connection lost"}
           </span>
           <span className="text-xs text-muted-foreground leading-tight mt-0.5">
-            The peer disconnected. Your messages are not saved.
+            {isLeft ? "The peer has left the conversation." : "The peer disconnected. Your messages are not saved."}
           </span>
         </div>
       </div>

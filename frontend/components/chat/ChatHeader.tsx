@@ -43,6 +43,12 @@ const statusConfig = {
     icon:     WifiDisconnected01Icon,
     variant:  "destructive" as const,
   },
+  left: {
+    label:    "Offline",
+    dotClass: "bg-gray-400",
+    icon:     WifiDisconnected01Icon,
+    variant:  "secondary" as const,
+  },
   idle: {
     label:    "Idle",
     dotClass: "bg-gray-400",
@@ -79,6 +85,8 @@ export default function ChatHeader({ peerName, connectionStatus, onLeave }: Chat
             ? "End-to-end encrypted"
             : connectionStatus === "connecting"
             ? "Establishing connection..."
+            : connectionStatus === "left"
+            ? "Peer left the chat"
             : "Connection lost"}
         </span>
       </div>

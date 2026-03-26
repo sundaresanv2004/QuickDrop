@@ -9,7 +9,7 @@ import EmptyState from "@/components/discovery/EmptyState"
 import RequestingModal from "@/components/handshake/RequestingModal"
 import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ComputerIcon, Loading03Icon } from "@hugeicons/core-free-icons"
+import { ComputerIcon } from "@hugeicons/core-free-icons"
 import Image from "next/image"
 
 // 30 predefined scattered positions (x, y as percentages)
@@ -95,7 +95,7 @@ export default function DiscoveryPage() {
       <StatusBar isConnected={wsConnected} />
 
       {/* Peer area */}
-      <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-y-auto">
+      <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-hidden">
         {peers.length === 0 ? (
           <EmptyState />
         ) : (
@@ -135,28 +135,6 @@ export default function DiscoveryPage() {
         <span className="text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
       </div>
 
-      {/* Requesting Status Banner */}
-      {connectionStatus === "requesting" && (
-        <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-y-1/2 -translate-x-1/2 w-[calc(100%-2rem)] sm:w-auto z-[100]">
-          <div className="bg-primary/10 backdrop-blur-xl border border-primary/20 rounded-2xl p-4 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-4">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-               <HugeiconsIcon icon={Loading03Icon} className="w-5 h-5 text-primary animate-spin" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate text-primary">Connecting...</p>
-              <p className="text-xs text-primary/60 truncate">
-                Waiting for {peers.find(p => p.device_id === targetPeerId)?.device_name || "peer"}
-              </p>
-            </div>
-            <button 
-              onClick={() => useWebRTC().cancelRequest()}
-              className="px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-full text-xs font-bold text-primary transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       <RequestingModal />
       <IncomingRequestModal />

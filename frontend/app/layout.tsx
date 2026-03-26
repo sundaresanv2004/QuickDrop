@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
 import { WebRTCProvider } from "@/context/WebRTCContext";
 
-const nunitoSans = Nunito_Sans({subsets:['latin'],variable:'--font-sans'})
+const nunitoSans = Nunito_Sans({ subsets: ['latin'], variable: '--font-sans' })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -16,21 +16,21 @@ const fontMono = Geist_Mono({
 import { Toaster } from "@/components/ui/sonner"
 
 export const metadata: Metadata = {
-  title:       "QuickDrop",
+  title: "QuickDrop",
   description: "Local P2P file sharing and chat — no cloud, no storage",
   appleWebApp: {
-    capable:        true,
+    capable: true,
     statusBarStyle: "default",
-    title:          "QuickDrop",
+    title: "QuickDrop",
   },
 }
 
 export const viewport: Viewport = {
-  width:        "device-width",
-  initialScale:  1,
-  maximumScale:  1,       // prevents iOS zoom-on-focus bug
-  userScalable:  false,
-  themeColor:   "#000000",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,       // prevents iOS zoom-on-focus bug
+  userScalable: false,
+  themeColor: "#000000",
 }
 
 export default function RootLayout({
@@ -48,7 +48,7 @@ export default function RootLayout({
         <WebRTCProvider>
           <ThemeProvider>
             {children}
-            <Toaster position="top-right" richColors closeButton />
+            <Toaster position="top-right" richColors />
           </ThemeProvider>
         </WebRTCProvider>
       </body>

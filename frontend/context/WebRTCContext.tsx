@@ -34,6 +34,16 @@ interface WebRTCContextType {
   acceptRequest: () => void;
   rejectRequest: () => void;
   resetConnection: () => void;
+  initializePeerConnection: (isInitiator: boolean) => RTCPeerConnection;
+
+  // WebRTC refs exposed for chat page use
+  chatChannel:   RTCDataChannel | null;
+  fileChannel:   RTCDataChannel | null;
+  systemChannel: RTCDataChannel | null;
+
+  // Navigation callbacks
+  onChatReady: (() => void) | null;
+  setOnChatReady: (cb: () => void) => void;
 }
 
 const WebRTCContext = createContext<WebRTCContextType | null>(null);
@@ -79,6 +89,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [incomingRequest, setIncomingRequest] = useState<{ peerId: string; peerName: string } | null>(null);
   const [targetPeerId, setTargetPeerId] = useState<string | null>(null);
+
+  const [onChatReady, setOnChatReadyState] = useState<(() => void) | null>(null);
+
+  const setOnChatReady = useCallback((cb: () => void) => {
+    setOnChatReadyState(() => cb);
+  }, []);
+
+  const pcRef        = useRef<RTCPeerConnection | null>(null);
+  const chatRef      = useRef<RTCDataChannel | null>(null);
+  const fileRef      = useRef<RTCDataChannel | null>(null);
+  const systemRef    = useRef<RTCDataChannel | null>(null);
+  const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
 
   const handleWelcome = useCallback((msg: WelcomeMessage) => {
     setMyDeviceId(msg.device_id);
@@ -153,12 +175,157 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setTargetPeerId(null);
   }, [connectionStatus, incomingRequest, sendMessage]);
 
+  const cleanupPeerConnection = useCallback(() => {
+    chatRef.current?.close();
+    fileRef.current?.close();
+    systemRef.current?.close();
+    pcRef.current?.close();
+
+    chatRef.current   = null;
+    fileRef.current   = null;
+    systemRef.current = null;
+    pcRef.current     = null;
+  }, []);
+
   const resetConnection = useCallback(() => {
+    cleanupPeerConnection();
     setConnectionStatus("idle");
     setIncomingRequest(null);
     setTargetPeerId(null);
     // TODO: also call resetConnection when peer_left matches targetPeerId
+  }, [cleanupPeerConnection]);
+
+  const setupDataChannelListeners = useCallback((
+    channel: RTCDataChannel,
+    label: string
+  ) => {
+    channel.onopen = () => {
+      console.log(`[DC] ${label} channel opened`);
+
+      if (label === "chat") {
+        setConnectionStatus("connected");
+        console.log("[PHASE 3 COMPLETE] Chat channel open — navigating");
+
+        // Trigger the navigation callback registered by the page
+        if (onChatReady) {
+          onChatReady();
+        }
+      }
+    };
+
+    channel.onclose = () => {
+      console.log(`[DC] ${label} channel closed`);
+    };
+
+    channel.onerror = (err) => {
+      console.error(`[DC] ${label} channel error:`, err);
+    };
+
+    channel.onmessage = (event) => {
+      console.log(`[DC] ${label} message received:`, event.data);
+      // Phase 4 will replace this with real message handling
+    };
+  }, [onChatReady]);
+
+  const flushIceCandidates = useCallback(async () => {
+    if (!pcRef.current) return;
+    const queue = iceCandidateQueueRef.current;
+    if (queue.length === 0) return;
+
+    console.log(`[ICE] Flushing ${queue.length} queued candidates`);
+    for (const candidate of queue) {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("[ICE] Failed to add queued candidate:", err);
+      }
+    }
+    iceCandidateQueueRef.current = [];
   }, []);
+
+  const initializePeerConnection = useCallback((isInitiator: boolean) => {
+    // ─── 1. Create the RTCPeerConnection ───
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ]
+    });
+    pcRef.current = pc;
+
+    // ─── 2. Only the INITIATOR creates DataChannels ───
+    // The receiver gets them via pc.ondatachannel (Part 4 below)
+    if (isInitiator) {
+      const chat   = pc.createDataChannel("chat",   { ordered: true });
+      const files  = pc.createDataChannel("files",  { ordered: true });
+      const system = pc.createDataChannel("system", { ordered: true });
+
+      chatRef.current   = chat;
+      fileRef.current   = files;
+      systemRef.current = system;
+
+      setupDataChannelListeners(chat,   "chat");
+      setupDataChannelListeners(files,  "files");
+      setupDataChannelListeners(system, "system");
+    }
+
+    // ─── 3. Receiver listens for incoming DataChannels ───
+    pc.ondatachannel = (event) => {
+      const channel = event.channel;
+      if (channel.label === "chat")   {
+        chatRef.current = channel;
+        setupDataChannelListeners(channel, "chat");
+      }
+      if (channel.label === "files")  {
+        fileRef.current = channel;
+        setupDataChannelListeners(channel, "files");
+      }
+      if (channel.label === "system") {
+        systemRef.current = channel;
+        setupDataChannelListeners(channel, "system");
+      }
+    };
+
+    // ─── 4. ICE candidate handler (wired up, logic added in Step 3) ───
+    pc.onicecandidate = (event) => {
+      if (event.candidate && targetPeerId) {
+        sendMessage({
+          type: "ice_candidate",
+          to: targetPeerId,
+          candidate: event.candidate.toJSON()
+        });
+        console.log("[ICE] Sent candidate:", event.candidate.type);
+      }
+      if (!event.candidate) {
+        console.log("[ICE] All candidates gathered");
+      }
+    };
+
+    pc.onicegatheringstatechange = () => {
+      console.log("[ICE] Gathering state:", pc.iceGatheringState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log("[ICE] Connection state:", pc.iceConnectionState);
+    };
+
+    // ─── 5. Connection state change handler ───
+    pc.onconnectionstatechange = () => {
+      console.log("[PC] connectionState:", pc.connectionState);
+      if (pc.connectionState === "connected") {
+        setConnectionStatus("connected");
+      }
+      if (
+        pc.connectionState === "disconnected" ||
+        pc.connectionState === "failed" ||
+        pc.connectionState === "closed"
+      ) {
+        setConnectionStatus("disconnected");
+      }
+    };
+
+    return pc;   // Return so Step 2 can call createOffer() on it
+  }, [sendMessage, setupDataChannelListeners, targetPeerId]);
 
   // --- STEP 7 MESSAGE ROUTING ---
   useEffect(() => {
@@ -203,8 +370,28 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         break;
       case "connect_accept":
         if (connectionStatus === "requesting") {
-          toast.success("Connection request accepted!");
           setConnectionStatus("connecting");
+
+          // ─── Initiator creates the offer ───
+          const pc = initializePeerConnection(true);  // isInitiator = true
+          
+          // Small async IIFE to handle the async offer creation
+          (async () => {
+            try {
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+
+              sendMessage({
+                type: "sdp_offer",
+                to: lastMessage.from_id,
+                sdp: offer
+              });
+
+              console.log("[SDP] Offer created and sent");
+            } catch (err) {
+              console.error("[SDP] Failed to create offer:", err);
+            }
+          })();
         }
         break;
       case "connect_reject":
@@ -216,8 +403,71 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         break;
       case "sdp_offer":
+        // ─── Receiver handles the incoming offer ───
+        (async () => {
+          try {
+            const pc = initializePeerConnection(false);  // isInitiator = false
+            
+            await pc.setRemoteDescription(
+              new RTCSessionDescription(lastMessage.sdp)
+            );
+
+            await flushIceCandidates();
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            sendMessage({
+              type: "sdp_answer",
+              to: lastMessage.from_id,
+              sdp: answer
+            });
+
+            console.log("[SDP] Answer created and sent");
+          } catch (err) {
+            console.error("[SDP] Failed to handle offer:", err);
+          }
+        })();
+        break;
       case "sdp_answer":
+        // ─── Initiator applies the answer from receiver ───
+        (async () => {
+          try {
+            if (!pcRef.current) return;
+            
+            await pcRef.current.setRemoteDescription(
+              new RTCSessionDescription(lastMessage.sdp)
+            );
+
+            await flushIceCandidates();
+
+            console.log("[SDP] Remote description set — ICE will begin");
+          } catch (err) {
+            console.error("[SDP] Failed to set remote description:", err)
+          }
+        })();
+        break;
       case "ice_candidate":
+        // ─── Receiver and Initiator handle ICE candidates ───
+        (async () => {
+          try {
+            if (!pcRef.current) return;
+
+            if (!pcRef.current.remoteDescription) {
+              // Queue it — will be flushed after setRemoteDescription
+              iceCandidateQueueRef.current.push(lastMessage.candidate);
+              console.log("[ICE] Queued candidate (remote description not set yet)");
+              return;
+            }
+
+            await pcRef.current.addIceCandidate(
+              new RTCIceCandidate(lastMessage.candidate)
+            );
+            console.log("[ICE] Applied remote candidate");
+          } catch (err) {
+            console.error("[ICE] Failed to add candidate:", err);
+          }
+        })();
         break;
       default:
         console.warn("Unhandled WS message type:", (lastMessage as any).type);
@@ -257,6 +507,16 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       acceptRequest,
       rejectRequest,
       resetConnection,
+      initializePeerConnection,
+
+      // Channels
+      chatChannel: chatRef.current,
+      fileChannel: fileRef.current,
+      systemChannel: systemRef.current,
+
+      // Navigation
+      onChatReady,
+      setOnChatReady,
     }}>
       {children}
     </WebRTCContext.Provider>

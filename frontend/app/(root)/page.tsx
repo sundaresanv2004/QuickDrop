@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useWebRTC } from "@/context/WebRTCContext"
 import StatusBar from "@/components/discovery/StatusBar"
 import PeerBubble from "@/components/discovery/PeerBubble"
@@ -47,6 +49,7 @@ function getDevicePosition(index: number): React.CSSProperties {
 }
 
 export default function DiscoveryPage() {
+  const router = useRouter()
   const { 
     wsConnected, 
     myDeviceId, 
@@ -55,8 +58,17 @@ export default function DiscoveryPage() {
     sendConnectRequest,
     connectionStatus,
     targetPeerId,
-    incomingRequest
+    incomingRequest,
+    setOnChatReady
   } = useWebRTC()
+
+  useEffect(() => {
+    setOnChatReady(() => {
+      if (targetPeerId) {
+        router.push(`/chat/${targetPeerId}`)
+      }
+    })
+  }, [setOnChatReady, targetPeerId, router])
 
   const handlePeerClick = (peerId: string) => {
     if (connectionStatus !== "idle") return;

@@ -59,16 +59,16 @@ export default function MessageInput({
   }
 
   return (
-    <div className="flex items-end gap-2 px-4 py-3 border-t bg-background">
+    <div className="flex items-end gap-2 px-3 sm:px-4 py-3 border-t bg-background sticky bottom-0">
       <Button
         type="button"
         size="icon"
         variant="ghost"
-        className="shrink-0 text-muted-foreground hover:text-primary"
+        className="h-11 w-11 sm:h-9 sm:w-9 shrink-0 text-muted-foreground hover:text-primary"
         onClick={() => fileInputRef.current?.click()}
         disabled={disabled}
       >
-        <HugeiconsIcon icon={AttachmentIcon} size={20} color="currentColor" />
+        <HugeiconsIcon icon={AttachmentIcon} className="w-5 h-5 sm:w-5 sm:h-5" color="currentColor" />
       </Button>
       <input
         type="file"
@@ -122,16 +122,19 @@ export default function MessageInput({
         onKeyDown={handleKeyDown}
         disabled={disabled}
         rows={1}
-        className="resize-none min-h-[40px] max-h-[120px] flex-1"
+        className="resize-none min-h-[40px] max-h-[120px] flex-1 text-base sm:text-sm"
+        inputMode="text"
+        enterKeyHint="send"
       />
 
       <Button
         variant="default"
         size="icon"
+        className="h-11 w-11 sm:h-9 sm:w-9"
         disabled={value.trim() === "" || disabled}
         onClick={handleSend}
       >
-        <HugeiconsIcon icon={SentIcon} size={18} color="currentColor" />
+        <HugeiconsIcon icon={SentIcon} className="w-5 h-5 sm:w-4.5 sm:h-4.5" color="currentColor" />
       </Button>
     </div>
   )

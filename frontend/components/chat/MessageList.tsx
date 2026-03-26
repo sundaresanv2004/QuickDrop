@@ -45,7 +45,7 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4">
+    <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 overscroll-contain">
       {messages.map((msg, index) => {
         const prevMsg = messages[index - 1]
         const nextMsg = messages[index + 1]

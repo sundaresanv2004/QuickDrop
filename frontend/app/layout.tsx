@@ -1,4 +1,5 @@
-import { Geist, Geist_Mono, Nunito_Sans } from "next/font/google"
+import type { Metadata, Viewport } from "next"
+import { Geist_Mono, Nunito_Sans } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -13,6 +14,24 @@ const fontMono = Geist_Mono({
 })
 
 import { Toaster } from "@/components/ui/sonner"
+
+export const metadata: Metadata = {
+  title:       "QuickDrop",
+  description: "Local P2P file sharing and chat — no cloud, no storage",
+  appleWebApp: {
+    capable:        true,
+    statusBarStyle: "default",
+    title:          "QuickDrop",
+  },
+}
+
+export const viewport: Viewport = {
+  width:        "device-width",
+  initialScale:  1,
+  maximumScale:  1,       // prevents iOS zoom-on-focus bug
+  userScalable:  false,
+  themeColor:   "#000000",
+}
 
 export default function RootLayout({
   children,

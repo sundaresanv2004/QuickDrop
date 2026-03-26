@@ -50,7 +50,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
     >
       <div
         className={cn(
-          "rounded-2xl px-3 py-2.5 max-w-[75%] min-w-[220px] space-y-2",
+          "rounded-2xl px-3 py-2.5 max-w-[88%] sm:max-w-[75%] min-w-[200px] space-y-2",
           isSent
             ? "bg-primary text-primary-foreground rounded-br-sm"
             : "bg-muted text-foreground rounded-bl-sm"
@@ -58,7 +58,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
       >
         {/* ── Section A: Image Preview ── */}
         {file.mimeType.startsWith("image/") && file.status === "complete" && file.objectUrl && (
-          <div className="rounded-lg overflow-hidden max-h-48">
+          <div className="rounded-lg overflow-hidden max-h-40 sm:max-h-48">
             <img
               src={file.objectUrl}
               alt={file.name}

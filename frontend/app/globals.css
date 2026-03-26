@@ -132,6 +132,18 @@
 * {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent text selection on buttons for better touch feel */
+button, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Smooth momentum scrolling on iOS */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
 }
 
 *::-webkit-scrollbar {

@@ -10,7 +10,7 @@ export default function StatusBar({ isConnected }: StatusBarProps) {
       <Badge
         variant="outline"
         className={`
-          flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium
+          flex items-center gap-2 rounded-full px-1.5 sm:px-4 py-2 text-[10px] sm:text-xs font-medium
           backdrop-blur-2xl border shadow-lg transition-all duration-300
           ${isConnected
             ? "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:bg-blue-500/10 dark:border-blue-400/20 dark:text-blue-400"
@@ -27,5 +27,6 @@ export default function StatusBar({ isConnected }: StatusBarProps) {
         {isConnected ? "Ready" : "Connecting..."}
       </Badge>
     </div>
+
   )
 }

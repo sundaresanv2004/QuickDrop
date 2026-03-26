@@ -9,7 +9,7 @@ import EmptyState from "@/components/discovery/EmptyState"
 import RequestingModal from "@/components/handshake/RequestingModal"
 import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ComputerIcon } from "@hugeicons/core-free-icons"
+import { ComputerIcon, Loading03Icon } from "@hugeicons/core-free-icons"
 import Image from "next/image"
 
 // 30 predefined scattered positions (x, y as percentages)
@@ -76,7 +76,7 @@ export default function DiscoveryPage() {
   }
 
   return (
-    <main className="relative flex flex-col items-center min-h-svh bg-background text-foreground selection:bg-primary/20 overflow-hidden">
+    <main className="relative flex flex-col items-center h-[100dvh] bg-background text-foreground selection:bg-primary/20 overflow-hidden">
 
       {/* Pulse wave background — anchored to bottom center (behind my device) */}
       <div className="pointer-events-none absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center justify-center">
@@ -95,27 +95,22 @@ export default function DiscoveryPage() {
       <StatusBar isConnected={wsConnected} />
 
       {/* Peer area */}
-      <div className="relative flex-1 w-full px-6 pt-10 pb-4">
+      <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-y-auto">
         {peers.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <EmptyState />
-          </div>
+          <EmptyState />
         ) : (
-          <div className="absolute inset-0 w-full h-full max-w-6xl mx-auto">
-            {peers.map((peer, i) => (
-              <div
-                key={peer.device_id}
-                className={`absolute animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}
-                style={getDevicePosition(i)}
-              >
-                <PeerBubble 
-                  peer={peer} 
-                  onClick={handlePeerClick} 
-                  disabled={connectionStatus !== "idle"}
-                />
-              </div>
-            ))}
-          </div>
+          peers.map((peer, i) => (
+            <div
+              key={peer.device_id}
+              className={`animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}
+            >
+              <PeerBubble 
+                peer={peer} 
+                onClick={handlePeerClick} 
+                disabled={connectionStatus !== "idle"}
+              />
+            </div>
+          ))
         )}
       </div>
 
@@ -139,6 +134,29 @@ export default function DiscoveryPage() {
         <Image src="/logo.png" alt="QuickDrop" width={28} height={28} className="rounded-md" />
         <span className="text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
       </div>
+
+      {/* Requesting Status Banner */}
+      {connectionStatus === "requesting" && (
+        <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-y-1/2 -translate-x-1/2 w-[calc(100%-2rem)] sm:w-auto z-[100]">
+          <div className="bg-primary/10 backdrop-blur-xl border border-primary/20 rounded-2xl p-4 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-4">
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+               <HugeiconsIcon icon={Loading03Icon} className="w-5 h-5 text-primary animate-spin" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold truncate text-primary">Connecting...</p>
+              <p className="text-xs text-primary/60 truncate">
+                Waiting for {peers.find(p => p.device_id === targetPeerId)?.device_name || "peer"}
+              </p>
+            </div>
+            <button 
+              onClick={() => useWebRTC().cancelRequest()}
+              className="px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-full text-xs font-bold text-primary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <RequestingModal />
       <IncomingRequestModal />

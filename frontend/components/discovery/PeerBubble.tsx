@@ -13,7 +13,7 @@ export default function PeerBubble({ peer, onClick, disabled }: PeerBubbleProps)
     <button
       onClick={() => onClick(peer.device_id)}
       disabled={disabled}
-      className={`group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl p-2 transition-all duration-300 ease-out ${disabled ? "opacity-40 cursor-not-allowed scale-95" : "hover:scale-110 active:scale-95"}`}
+      className={`group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl p-2 transition-all duration-300 ease-out active:scale-95 touch-manipulation cursor-pointer ${disabled ? "opacity-40 cursor-not-allowed scale-95" : "hover:scale-110"}`}
     >
       <div className="relative">
         {/* Pulsing discovery ring */}

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import Image from "next/image"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 export default function Error({
@@ -42,19 +43,20 @@ export default function Error({
         </div>
 
         <div className="flex gap-3 mt-2">
-          <Button 
-            variant="outline" 
-            onClick={reset} 
+          <Button
+            variant="outline"
+            onClick={reset}
             className="rounded-full px-6 h-11"
           >
             Try again
           </Button>
-          <Button 
-            asChild
-            className="rounded-full px-6 h-11 shadow-lg shadow-primary/20"
-          >
-            <a href="/">Back to QuickDrop</a>
-          </Button>
+          <Link href="/" passHref>
+            <Button
+              className="rounded-full px-6 h-11 shadow-lg shadow-primary/20"
+            >
+              Back to QuickDrop
+            </Button>
+          </Link>
         </div>
       </div>
 

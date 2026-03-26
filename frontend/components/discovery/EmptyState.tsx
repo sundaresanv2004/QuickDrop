@@ -3,7 +3,7 @@ import { WifiDisconnected01Icon } from "@hugeicons/core-free-icons";
 
 export default function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center text-center p-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="flex flex-col items-center justify-center gap-3 h-full px-6 text-center text-muted-foreground animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="relative mb-6">
         {/* Soft ambient glow */}
         <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />

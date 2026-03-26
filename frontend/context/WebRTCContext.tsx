@@ -72,8 +72,11 @@ export const useWebRTC = () => {
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mounted, setMounted] = useState(false);
-  const processedMessagesRef = useRef<Set<any>>(new Set());
-  useEffect(() => setMounted(true), []);
+  const processedMessagesRef = useRef<Set<WSMessage>>(new Set());
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const getWsUrl = () => {
     let envUrl = process.env.NEXT_PUBLIC_WS_URL;
@@ -116,6 +119,11 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [pendingFiles, setPendingFiles] = useState<Map<string, PendingFileTransfer>>(new Map());
 
+  // Channels in state for reactivity in components
+  const [chatChannel, setChatChannel] = useState<RTCDataChannel | null>(null);
+  const [fileChannel, setFileChannel] = useState<RTCDataChannel | null>(null);
+  const [systemChannel, setSystemChannel] = useState<RTCDataChannel | null>(null);
+
   const pcRef        = useRef<RTCPeerConnection | null>(null);
   const chatRef      = useRef<RTCDataChannel | null>(null);
   const fileRef      = useRef<RTCDataChannel | null>(null);
@@ -128,7 +136,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const handlePeerList = useCallback((msg: PeerListMessage) => {
-    console.log("[DEBUG] handlePeerList", msg.peers.length, "peers");
     setPeers(msg.peers);
   }, []);
 
@@ -202,10 +209,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     systemRef.current?.close();
     pcRef.current?.close();
 
-    chatRef.current   = null;
-    fileRef.current   = null;
-    systemRef.current = null;
-    pcRef.current     = null;
+    setChatChannel(null);
+    setFileChannel(null);
+    setSystemChannel(null);
     fileTransferQueueRef.current = [];
   }, []);
 
@@ -268,8 +274,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             return updated;
           });
 
-          console.log("[SYSTEM] File incoming:", payload.name, 
-            `(${payload.totalChunks} chunks)`);
           
           fileTransferQueueRef.current.push(payload.fileId);
           break;
@@ -277,18 +281,15 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         case "typing_start":
           setIsTyping(true);
-          console.log("[SYSTEM] Peer is typing");
           break;
 
         case "typing_stop":
           setIsTyping(false);
-          console.log("[SYSTEM] Peer stopped typing");
           break;
 
         case "bye":
           setConnectionStatus("disconnected")
           setIsTyping(false)
-          console.log("[SYSTEM] Peer sent bye — disconnecting")
           break
 
         default:
@@ -313,11 +314,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     label: string
   ) => {
     channel.onopen = () => {
-      console.log(`[DC] ${label} channel opened`);
 
       if (label === "chat") {
         setConnectionStatus("connected");
-        console.log("[PHASE 3 COMPLETE] Chat channel open — navigating");
 
         // Trigger the navigation callback registered by the page
         if (onChatReady) {
@@ -327,7 +326,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     channel.onclose = () => {
-      console.log(`[DC] ${label} channel closed`);
     };
 
     channel.onerror = (err) => {
@@ -348,7 +346,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               timestamp: payload.timestamp,
             };
             addMessage(message);
-            console.log("[CHAT] Text message received:", payload.content);
           }
         } catch {
           console.error("[CHAT] Failed to parse chat message:", event.data);
@@ -413,9 +410,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             return msg;
           }));
 
-          console.log(
-            `[FILES] Chunk ${transfer.received}/${transfer.meta.totalChunks} (${progress}%)`
-          );
 
           // Check completion
           if (transfer.received === transfer.meta.totalChunks) {
@@ -445,8 +439,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             updated.delete(activeFileId);
             fileTransferQueueRef.current.shift();
             
-            console.log("[FILES] Reassembled:", transfer.meta.name, 
-              `(${(blob.size / 1024).toFixed(1)} KB)`);
           }
 
           return updated;
@@ -464,7 +456,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const queue = iceCandidateQueueRef.current;
     if (queue.length === 0) return;
 
-    console.log(`[ICE] Flushing ${queue.length} queued candidates`);
     for (const candidate of queue) {
       try {
         await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
@@ -538,7 +529,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       totalChunks,
     }
     systemRef.current.send(JSON.stringify(meta))
-    console.log("[FILES] Sent file_meta:", file.name, `(${totalChunks} chunks)`)
 
     // ─── 4. Add sending bubble to local messages ───
     const messageId = crypto.randomUUID()
@@ -638,7 +628,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return msg
     }))
 
-    console.log("[FILES] Transfer complete:", file.name)
   }, [addMessage])
 
   const initializePeerConnection = useCallback((isInitiator: boolean) => {
@@ -663,6 +652,10 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       fileRef.current   = files;
       systemRef.current = system;
 
+      setChatChannel(chat);
+      setFileChannel(files);
+      setSystemChannel(system);
+
       setupDataChannelListeners(chat,   "chat");
       setupDataChannelListeners(files,  "files");
       setupDataChannelListeners(system, "system");
@@ -673,15 +666,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const channel = event.channel;
       if (channel.label === "chat")   {
         chatRef.current = channel;
+        setChatChannel(channel);
         setupDataChannelListeners(channel, "chat");
       }
       if (channel.label === "files")  {
         channel.binaryType = "arraybuffer";
         fileRef.current = channel;
+        setFileChannel(channel);
         setupDataChannelListeners(channel, "files");
       }
       if (channel.label === "system") {
         systemRef.current = channel;
+        setSystemChannel(channel);
         setupDataChannelListeners(channel, "system");
       }
     };
@@ -694,24 +690,19 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           to: targetPeerId,
           candidate: event.candidate.toJSON()
         });
-        console.log("[ICE] Sent candidate:", event.candidate.type);
       }
       if (!event.candidate) {
-        console.log("[ICE] All candidates gathered");
       }
     };
 
     pc.onicegatheringstatechange = () => {
-      console.log("[ICE] Gathering state:", pc.iceGatheringState);
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log("[ICE] Connection state:", pc.iceConnectionState);
     };
 
     // ─── 5. Connection state change handler ───
     pc.onconnectionstatechange = () => {
-      console.log("[PC] connectionState:", pc.connectionState);
       if (pc.connectionState === "connected") {
         setConnectionStatus("connected");
       }
@@ -748,16 +739,22 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // --- STEP 7 MESSAGE ROUTING ---
   useEffect(() => {
-    if (!lastMessage || processedMessagesRef.current.has(lastMessage)) return;
+    if (!lastMessage || !mounted || processedMessagesRef.current.has(lastMessage)) return;
     processedMessagesRef.current.add(lastMessage);
 
     // Keep the set from growing too large
     if (processedMessagesRef.current.size > 50) {
       const iter = processedMessagesRef.current.values();
-      processedMessagesRef.current.delete(iter.next().value);
+      const first = iter.next().value;
+      if (first) {
+        processedMessagesRef.current.delete(first);
+      }
     }
 
-    switch (lastMessage.type) {
+    const timer = setTimeout(() => {
+      if (!lastMessage) return;
+
+      switch (lastMessage.type) {
       case "welcome":
         handleWelcome(lastMessage);
         break;
@@ -768,17 +765,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         handlePeerJoined(lastMessage);
         break;
       case "peer_left":
-        console.log("[DEBUG] handlePeerLeft", lastMessage.device_id);
         handlePeerLeft(lastMessage);
         break;
       // These cases will be handled in Phase 2 and 3:
       case "connect_request":
-        const requesterName = peers.find(p => p.device_id === lastMessage.from_id)?.device_name ?? "Unknown Device";
-        setIncomingRequest({
-          peerId: lastMessage.from_id,
-          peerName: requesterName
-        });
-        setConnectionStatus("receiving");
+        {
+          const requesterName = peers.find(p => p.device_id === lastMessage.from_id)?.device_name ?? "Unknown Device";
+          setIncomingRequest({
+            peerId: lastMessage.from_id,
+            peerName: requesterName
+          });
+          setConnectionStatus("receiving");
+        }
         break;
       case "connect_cancel":
         if (connectionStatus === "receiving" && incomingRequest && incomingRequest.peerId === lastMessage.from_id) {
@@ -806,7 +804,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 sdp: offer
               });
 
-              console.log("[SDP] Offer created and sent");
             } catch (err) {
               console.error("[SDP] Failed to create offer:", err);
             }
@@ -842,7 +839,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               sdp: answer
             });
 
-            console.log("[SDP] Answer created and sent");
           } catch (err) {
             console.error("[SDP] Failed to handle offer:", err);
           }
@@ -860,7 +856,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
             await flushIceCandidates();
 
-            console.log("[SDP] Remote description set — ICE will begin");
           } catch (err) {
             console.error("[SDP] Failed to set remote description:", err)
           }
@@ -875,36 +870,38 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             if (!pcRef.current.remoteDescription) {
               // Queue it — will be flushed after setRemoteDescription
               iceCandidateQueueRef.current.push(lastMessage.candidate);
-              console.log("[ICE] Queued candidate (remote description not set yet)");
               return;
             }
 
             await pcRef.current.addIceCandidate(
               new RTCIceCandidate(lastMessage.candidate)
             );
-            console.log("[ICE] Applied remote candidate");
           } catch (err) {
             console.error("[ICE] Failed to add candidate:", err);
           }
         })();
         break;
       default:
-        console.warn("Unhandled WS message type:", (lastMessage as any).type);
-    }
-  }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft, connectionStatus, incomingRequest, peers]);
+        console.warn("Unhandled WS message type:", (lastMessage as WSMessage).type);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [lastMessage, handleWelcome, handlePeerList, handlePeerJoined, handlePeerLeft, connectionStatus, incomingRequest, peers, initializePeerConnection, sendMessage, flushIceCandidates, mounted]);
 
   // Safety check: if peers explode, reset them once to prevent UI crash
   useEffect(() => {
     if (peers.length > 200) {
       console.warn("[CRITICAL] Peers exceeded 200, emergency reset triggered.");
-      setPeers([]);
+      // Avoid synchronous setState in effect
+      setTimeout(() => setPeers([]), 0);
     }
   }, [peers.length]);
+
 
   // --- STEP 7 DEBUG HELPER ---
   useEffect(() => {
     if (process.env.NODE_ENV === "development" && lastMessage) {
-      console.log("[WS IN]", lastMessage.type, lastMessage);
     }
   }, [lastMessage]);
 
@@ -929,9 +926,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       initializePeerConnection,
 
       // Channels
-      chatChannel: chatRef.current,
-      fileChannel: fileRef.current,
-      systemChannel: systemRef.current,
+      chatChannel,
+      fileChannel,
+      systemChannel,
 
       // Navigation
       onChatReady,

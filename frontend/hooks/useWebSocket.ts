@@ -9,6 +9,8 @@ export function useWebSocket(url: string) {
 
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const connectRef = useRef<(() => void) | undefined>(undefined);
+
   const connect = useCallback(() => {
     // Wait until URL is populated
     if (!url) return;
@@ -49,7 +51,7 @@ export function useWebSocket(url: string) {
       // Auto-reconnect after 2.5 seconds
       reconnectTimeoutRef.current = setTimeout(() => {
         console.log("Attempting WebSocket Reconnection...");
-        connect();
+        connectRef.current?.();
       }, 2500);
     };
 
@@ -57,6 +59,10 @@ export function useWebSocket(url: string) {
       console.error("WS Error", event);
     };
   }, [url]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

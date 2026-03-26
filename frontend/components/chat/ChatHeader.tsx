@@ -73,7 +73,7 @@ export default function ChatHeader({ peerName, connectionStatus, onLeave }: Chat
       </Button>
 
       <div className="flex flex-col items-center">
-        <span className="font-semibold text-sm">{peerName}</span>
+        <span className="font-semibold text-sm max-w-[120px] sm:max-w-none truncate">{peerName}</span>
         <span className="text-[10px] text-muted-foreground leading-tight">
           {connectionStatus === "connected"
             ? "End-to-end encrypted"

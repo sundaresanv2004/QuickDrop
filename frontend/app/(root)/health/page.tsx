@@ -59,10 +59,17 @@ export default function HealthPage() {
   }, []);
 
   useEffect(() => {
-    fetchHealth();
+    // Avoid synchronous setState in effect
+    const timer = setTimeout(() => {
+      fetchHealth();
+    }, 0);
     const interval = setInterval(fetchHealth, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchHealth]);
+
 
   return (
     <main className="min-h-svh bg-background text-foreground">
@@ -82,7 +89,7 @@ export default function HealthPage() {
             <div className="text-sm text-muted-foreground space-y-2 mt-4 text-left font-mono bg-background/50 p-4 rounded-lg border border-border/20">
               <p>Attempted URL: <span className="text-foreground break-all">{getApiUrl("/health")}</span></p>
               <p>Check: <a href={getApiUrl("/health")} target="_blank" rel="noreferrer" className="text-primary hover:underline">Open API Link in New Tab</a></p>
-              <p className="mt-4 text-xs">If the link above works but this page still shows "unreachable", check your browser's console for CORS or SSL errors.</p>
+              <p className="mt-4 text-xs">If the link above works but this page still shows &quot;unreachable&quot;, check your browser&apos;s console for CORS or SSL errors.</p>
             </div>
           </div>
         ) : (

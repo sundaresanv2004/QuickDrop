@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { getDeviceName } from '@/lib/device';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
+import type { ChatMessage, PendingFileTransfer, TextMessagePayload, FileMetaPayload, SystemPayload } from '@/types/chat';
 
 export type ConnectionStatus =
   | "idle"           // No active connection or request
@@ -44,6 +45,17 @@ interface WebRTCContextType {
   // Navigation callbacks
   onChatReady: (() => void) | null;
   setOnChatReady: (cb: () => void) => void;
+
+  // Chat state
+  messages:     ChatMessage[];
+  isTyping:     boolean;
+  pendingFiles: Map<string, PendingFileTransfer>;
+
+  // Chat actions
+  addMessage:    (message: ChatMessage) => void;
+  clearMessages: () => void;
+  sendChatMessage: (content: string) => void;
+  sendSystemMessage: (payload: SystemPayload) => void;
 }
 
 const WebRTCContext = createContext<WebRTCContextType | null>(null);
@@ -95,6 +107,10 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const setOnChatReady = useCallback((cb: () => void) => {
     setOnChatReadyState(() => cb);
   }, []);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [pendingFiles, setPendingFiles] = useState<Map<string, PendingFileTransfer>>(new Map());
 
   const pcRef        = useRef<RTCPeerConnection | null>(null);
   const chatRef      = useRef<RTCDataChannel | null>(null);
@@ -187,13 +203,93 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     pcRef.current     = null;
   }, []);
 
+  const addMessage = useCallback((message: ChatMessage) => {
+    setMessages(prev => [...prev, message]);
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    setIsTyping(false);
+    setPendingFiles(new Map());
+  }, []);
+
+  const handleSystemMessage = useCallback((raw: string) => {
+    try {
+      const payload: SystemPayload = JSON.parse(raw);
+
+      switch (payload.type) {
+        case "file_meta": {
+          // Add a "receiving" file bubble to messages immediately
+          const fileMessage: ChatMessage = {
+            id:        crypto.randomUUID(),
+            type:      "file",
+            direction: "received",
+            timestamp: Date.now(),
+            file: {
+              fileId:    payload.fileId,
+              name:      payload.name,
+              size:      payload.size,
+              mimeType:  payload.mimeType,
+              status:    "receiving",
+              progress:  0,
+              objectUrl: null,
+            }
+          };
+          addMessage(fileMessage);
+
+          // Register the pending transfer
+          setPendingFiles(prev => {
+            const updated = new Map(prev);
+            updated.set(payload.fileId, {
+              meta: {
+                fileId:      payload.fileId,
+                name:        payload.name,
+                size:        payload.size,
+                mimeType:    payload.mimeType,
+                totalChunks: payload.totalChunks,
+              },
+              chunks:   [],
+              received: 0,
+            });
+            return updated;
+          });
+
+          console.log("[SYSTEM] File incoming:", payload.name, 
+            `(${payload.totalChunks} chunks)`);
+          break;
+        }
+
+        case "typing_start":
+          setIsTyping(true);
+          console.log("[SYSTEM] Peer is typing");
+          break;
+
+        case "typing_stop":
+          setIsTyping(false);
+          console.log("[SYSTEM] Peer stopped typing");
+          break;
+
+        case "bye":
+          setConnectionStatus("disconnected");
+          console.log("[SYSTEM] Peer sent bye — disconnecting");
+          break;
+
+        default:
+          console.warn("[SYSTEM] Unknown system message:", payload);
+      }
+    } catch {
+      console.error("[SYSTEM] Failed to parse system message:", raw);
+    }
+  }, [addMessage, setIsTyping, setConnectionStatus, setPendingFiles]);
+
   const resetConnection = useCallback(() => {
     cleanupPeerConnection();
+    clearMessages();
     setConnectionStatus("idle");
     setIncomingRequest(null);
     setTargetPeerId(null);
     // TODO: also call resetConnection when peer_left matches targetPeerId
-  }, [cleanupPeerConnection]);
+  }, [cleanupPeerConnection, clearMessages]);
 
   const setupDataChannelListeners = useCallback((
     channel: RTCDataChannel,
@@ -222,10 +318,111 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     channel.onmessage = (event) => {
-      console.log(`[DC] ${label} message received:`, event.data);
-      // Phase 4 will replace this with real message handling
+      if (label === "chat") {
+        try {
+          const payload: TextMessagePayload = JSON.parse(event.data);
+
+          if (payload.type === "text_message") {
+            const message: ChatMessage = {
+              id:        payload.id,
+              type:      "text",
+              direction: "received",
+              content:   payload.content,
+              timestamp: payload.timestamp,
+            };
+            addMessage(message);
+            console.log("[CHAT] Text message received:", payload.content);
+          }
+        } catch {
+          console.error("[CHAT] Failed to parse chat message:", event.data);
+        }
+      }
+
+      if (label === "files") {
+        // event.data is ArrayBuffer — binary chunk
+        if (!(event.data instanceof ArrayBuffer)) {
+          console.warn("[FILES] Expected ArrayBuffer but got:", typeof event.data);
+          return;
+        }
+
+        // Find which file transfer this chunk belongs to by checking 
+        // pendingFiles — the file_meta (sent on system channel) always 
+        // arrives before any binary chunks because system channel is 
+        // ordered and files channel is ordered too.
+        // We pick the oldest pending transfer that is still "receiving".
+        setPendingFiles(prev => {
+          const updated = new Map(prev);
+
+          // Find the first pending transfer still in progress
+          let targetId: string | null = null;
+          for (const [id, transfer] of updated) {
+            if (transfer.received < transfer.meta.totalChunks) {
+              targetId = id;
+              break;
+            }
+          }
+
+          if (!targetId) {
+            console.warn("[FILES] Received chunk but no pending transfer found");
+            return prev;
+          }
+
+          const transfer = updated.get(targetId)!;
+          transfer.chunks.push(event.data as ArrayBuffer);
+          transfer.received += 1;
+
+          const progress = Math.round(
+            (transfer.received / transfer.meta.totalChunks) * 100
+          );
+
+          // Update progress on the corresponding message in messages state
+          setMessages(msgs => msgs.map(msg => {
+            if (msg.type === "file" && msg.file?.fileId === targetId) {
+              return {
+                ...msg,
+                file: { ...msg.file, progress }
+              };
+            }
+            return msg;
+          }));
+
+          // Check if transfer is complete
+          if (transfer.received === transfer.meta.totalChunks) {
+            const blob = new Blob(transfer.chunks, {
+              type: transfer.meta.mimeType
+            });
+            const objectUrl = URL.createObjectURL(blob);
+
+            // Mark complete on the message
+            setMessages(msgs => msgs.map(msg => {
+              if (msg.type === "file" && msg.file?.fileId === targetId) {
+                return {
+                  ...msg,
+                  file: {
+                    ...msg.file,
+                    status: "complete" as const,
+                    progress: 100,
+                    objectUrl,
+                  }
+                };
+              }
+              return msg;
+            }));
+
+            // Remove from pending
+            updated.delete(targetId!);
+            console.log("[FILES] Transfer complete:", transfer.meta.name);
+          }
+
+          return updated;
+        });
+      }
+
+      if (label === "system") {
+        handleSystemMessage(event.data as string);
+      }
     };
-  }, [onChatReady]);
+  }, [onChatReady, addMessage, handleSystemMessage, setPendingFiles]);
 
   const flushIceCandidates = useCallback(async () => {
     if (!pcRef.current) return;
@@ -241,6 +438,44 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
     iceCandidateQueueRef.current = [];
+  }, []);
+
+  const sendChatMessage = useCallback((content: string) => {
+    if (!chatRef.current || chatRef.current.readyState !== "open") {
+      console.warn("[CHAT] Cannot send — channel not open");
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    const timestamp = Date.now();
+
+    const payload: TextMessagePayload = {
+      type: "text_message",
+      id,
+      content,
+      timestamp,
+    };
+
+    // Send over DataChannel
+    chatRef.current.send(JSON.stringify(payload));
+
+    // Optimistic local add
+    const message: ChatMessage = {
+      id,
+      type:      "text",
+      direction: "sent",
+      content,
+      timestamp,
+    };
+    addMessage(message);
+  }, [addMessage]);
+
+  const sendSystemMessage = useCallback((payload: SystemPayload) => {
+    if (!systemRef.current || systemRef.current.readyState !== "open") {
+      console.warn("[SYSTEM] Cannot send — channel not open");
+      return;
+    }
+    systemRef.current.send(JSON.stringify(payload));
   }, []);
 
   const initializePeerConnection = useCallback((isInitiator: boolean) => {
@@ -517,6 +752,15 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Navigation
       onChatReady,
       setOnChatReady,
+
+      // Chat state
+      messages,
+      isTyping,
+      pendingFiles,
+      addMessage,
+      clearMessages,
+      sendChatMessage,
+      sendSystemMessage,
     }}>
       {children}
     </WebRTCContext.Provider>

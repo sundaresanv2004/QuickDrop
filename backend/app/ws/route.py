@@ -5,35 +5,42 @@ import json
 
 import socket
 
+_cached_local_ip = None
+
 def get_local_ip():
+    global _cached_local_ip
+    if _cached_local_ip:
+        return _cached_local_ip
     try:
+        # Create a dummy socket to see which IP the OS would use to reach the internet
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("10.255.255.255", 1))
-        ip = s.getsockname()[0]
+        s.settimeout(0.5) # Don't block forever
+        # Use a common public DNS IP to find the outgoing interface
+        s.connect(("8.8.8.8", 80))
+        _cached_local_ip = s.getsockname()[0]
         s.close()
-        return ip
+        return _cached_local_ip
     except Exception:
         return "127.0.0.1"
 
 def normalize_ip_to_room(ip: str) -> str:
     """
     Groups devices into a single 'room'.
-    For IPv4: Use the full IP (since multiple devices behind NAT share one public IP).
-    For IPv6: Use the /64 prefix (first 4 blocks), as modern ISPs (like Jio/Airtel) 
-    provide unique public IPs to each device on the same local network.
+    For IPv4: Use the full IP.
+    For IPv6: Use the /64 prefix (first 4 blocks).
     """
     if ":" in ip:
-        # IPv6 logic: take the first 4 blocks (the /64 subnet prefix)
         parts = ip.split(":")
         if len(parts) >= 4:
             return ":".join(parts[:4])
     return ip
 
-router = APIRouter()
-
 @router.websocket("/connect")
 async def signaling_endpoint(websocket: WebSocket):
-    # STEP A: Connect
+    # STEP 0: Accept immediately to prevent client-side "Connecting" hang
+    await websocket.accept()
+
+    # STEP A: Identify Client
     device_id = str(uuid.uuid4())
     
     # Try getting real IP from headers first (if behind proxy), then fallback to client host

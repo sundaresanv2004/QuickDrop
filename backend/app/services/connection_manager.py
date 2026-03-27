@@ -8,7 +8,6 @@ class ConnectionManager:
         self.device_rooms: dict[str, str] = {}      # device_id → room_id
 
     async def connect(self, websocket: WebSocket, device_id: str, device_name: str, ip: str, room_id: str, device_type: str = "unknown"):
-        await websocket.accept()
         self.devices[device_id] = DeviceInfo(
             device_id=device_id,
             device_name=device_name,

@@ -35,6 +35,8 @@ def normalize_ip_to_room(ip: str) -> str:
             return ":".join(parts[:4])
     return ip
 
+router = APIRouter()
+
 @router.websocket("/connect")
 async def signaling_endpoint(websocket: WebSocket):
     # STEP 0: Accept immediately to prevent client-side "Connecting" hang

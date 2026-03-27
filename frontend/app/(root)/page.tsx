@@ -68,7 +68,6 @@ export default function DiscoveryPage() {
     connectionStatus,
     targetPeerId,
     incomingRequest,
-    setOnChatReady,
     updateDeviceName,
     myDeviceType
   } = useWebRTC()
@@ -98,12 +97,10 @@ export default function DiscoveryPage() {
   }
 
   useEffect(() => {
-    setOnChatReady(() => {
-      if (targetPeerId) {
-        router.push(`/chat/${targetPeerId}`)
-      }
-    })
-  }, [setOnChatReady, targetPeerId, router])
+    if ((connectionStatus === "connecting" || connectionStatus === "connected") && targetPeerId) {
+      router.push(`/chat/${targetPeerId}`)
+    }
+  }, [connectionStatus, targetPeerId, router])
 
   const handlePeerClick = (peerId: string) => {
     if (connectionStatus !== "idle") return;

@@ -4,6 +4,7 @@ import uuid
 import json
 
 import socket
+import ipaddress
 
 _cached_local_ip = None
 
@@ -23,17 +24,27 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
-def normalize_ip_to_room(ip: str) -> str:
+def normalize_ip_to_room(ip_str: str) -> str:
     """
     Groups devices into a single 'room'.
     For IPv4: Use the full IP.
-    For IPv6: Use the /64 prefix (first 4 blocks).
+    For IPv6: Use the /64 prefix (first 4 blocks), handled robustly via ipaddress.
     """
-    if ":" in ip:
-        parts = ip.split(":")
-        if len(parts) >= 4:
-            return ":".join(parts[:4])
-    return ip
+    try:
+        # Use ipaddress to properly handle all IPv6 formats (compressed, etc.)
+        addr = ipaddress.ip_address(ip_str)
+        if addr.version == 6:
+            # Mask to /64 prefix to group devices on the same local network
+            net = ipaddress.IPv6Network(f"{ip_str}/64", strict=False)
+            return str(net.network_address)
+        return str(addr)
+    except Exception:
+        # Fallback to simple split if ipaddress fails for any reason
+        if ":" in ip_str:
+            parts = ip_str.split(":")
+            if len(parts) >= 4:
+                return ":".join(parts[:4])
+        return ip_str
 
 router = APIRouter()
 

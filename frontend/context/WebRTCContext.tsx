@@ -49,8 +49,6 @@ interface WebRTCContextType {
   systemChannel: RTCDataChannel | null;
 
   // Navigation callbacks
-  onChatReady: (() => void) | null;
-  setOnChatReady: (cb: () => void) => void;
 
   // Chat state
   messages:     ChatMessage[];
@@ -120,11 +118,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [incomingRequest, setIncomingRequest] = useState<{ peerId: string; peerName: string } | null>(null);
   const [targetPeerId, setTargetPeerId] = useState<string | null>(null);
 
-  const [onChatReady, setOnChatReadyState] = useState<(() => void) | null>(null);
-
-  const setOnChatReady = useCallback((cb: () => void) => {
-    setOnChatReadyState(() => cb);
-  }, []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
@@ -356,9 +349,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setConnectionStatus("connected");
 
         // Trigger the navigation callback registered by the page
-        if (onChatReady) {
-          onChatReady();
-        }
       }
     };
 
@@ -517,7 +507,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         handleSystemMessage(event.data as string);
       }
     };
-  }, [onChatReady, addMessage, handleSystemMessage]);
+  }, [addMessage, handleSystemMessage]);
 
   const flushIceCandidates = useCallback(async () => {
     if (!pcRef.current) return;
@@ -1036,8 +1026,6 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       systemChannel,
 
       // Navigation
-      onChatReady,
-      setOnChatReady,
 
       // Chat state
       messages,

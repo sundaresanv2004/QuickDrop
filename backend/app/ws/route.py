@@ -15,6 +15,20 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def normalize_ip_to_room(ip: str) -> str:
+    """
+    Groups devices into a single 'room'.
+    For IPv4: Use the full IP (since multiple devices behind NAT share one public IP).
+    For IPv6: Use the /64 prefix (first 4 blocks), as modern ISPs (like Jio/Airtel) 
+    provide unique public IPs to each device on the same local network.
+    """
+    if ":" in ip:
+        # IPv6 logic: take the first 4 blocks (the /64 subnet prefix)
+        parts = ip.split(":")
+        if len(parts) >= 4:
+            return ":".join(parts[:4])
+    return ip
+
 router = APIRouter()
 
 @router.websocket("/connect")
@@ -23,7 +37,6 @@ async def signaling_endpoint(websocket: WebSocket):
     device_id = str(uuid.uuid4())
     
     # Try getting real IP from headers first (if behind proxy), then fallback to client host
-    # Standard headers used by common reverse proxies
     headers = websocket.headers
     ip = (
         headers.get("cf-connecting-ip") or 
@@ -31,13 +44,15 @@ async def signaling_endpoint(websocket: WebSocket):
         (headers.get("x-forwarded-for") or "").split(",")[0].strip() or 
         websocket.client.host
     )
-        
     
-    # If connection is coming from the same machine, report its actual LAN IP
+    # If connection is coming from the same machine (local debug), use LAN IP
     if ip in ("127.0.0.1", "localhost", "::1"):
         ip = get_local_ip()
+    
+    # Normalize the IP into a Room ID to handle IPv6 unique-IP-per-device behavior
+    room_id = normalize_ip_to_room(ip)
         
-    await manager.connect(websocket, device_id, "Unknown", ip)
+    await manager.connect(websocket, device_id, "Unknown", ip, room_id=room_id)
 
     # STEP B: Send Welcome
     await websocket.send_json({
@@ -45,8 +60,8 @@ async def signaling_endpoint(websocket: WebSocket):
         "device_id": device_id
     })
 
-    # STEP C: Send Peer List
-    peers = manager.get_room_peers(ip, exclude_id=device_id)
+    # STEP C: Send Peer List (Using room_id!)
+    peers = manager.get_room_peers(room_id, exclude_id=device_id)
     await websocket.send_json({
         "type": "peer_list",
         "peers": peers
@@ -61,7 +76,7 @@ async def signaling_endpoint(websocket: WebSocket):
             if msg.get("type") == "register":
                 manager.devices[device_id].device_name = msg["device_name"]
                 manager.devices[device_id].device_type = msg.get("device_type", "unknown")
-                await manager.broadcast_room(ip, {
+                await manager.broadcast_room(room_id, {
                     "type": "peer_joined",
                     "device_id": device_id,
                     "device_name": msg["device_name"],
@@ -77,7 +92,7 @@ async def signaling_endpoint(websocket: WebSocket):
         pass
     finally:
         manager.disconnect(device_id)
-        await manager.broadcast_room(ip, {
+        await manager.broadcast_room(room_id, {
             "type": "peer_left",
             "device_id": device_id
         }, exclude_id=device_id)

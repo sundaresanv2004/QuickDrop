@@ -24,7 +24,7 @@ async def get_devices():
 @router.get("/rooms")
 async def get_rooms():
     rooms_data = {}
-    for ip, device_set in manager.rooms.items():
-        rooms_data[ip] = list(device_set)
+    for room_id, device_set in manager.rooms.items():
+        rooms_data[room_id] = list(device_set)
     return {"rooms": rooms_data}
 

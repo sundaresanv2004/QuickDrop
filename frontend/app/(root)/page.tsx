@@ -128,10 +128,10 @@ export default function DiscoveryPage() {
 
       {/* Peer area */}
       <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-hidden">
-        {peers.length === 0 ? (
+        {peers.filter(p => !p.is_busy).length === 0 ? (
           <EmptyState />
         ) : (
-          peers.map((peer, i) => (
+          peers.filter(p => !p.is_busy).map((peer, i) => (
             <div
               key={peer.device_id}
               className={`animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}

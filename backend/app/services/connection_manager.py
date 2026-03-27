@@ -1,5 +1,6 @@
 from fastapi import WebSocket
 from app.models.device import DeviceInfo
+import time
 
 class ConnectionManager:
     def __init__(self):
@@ -13,7 +14,8 @@ class ConnectionManager:
             device_name=device_name,
             ip=ip,
             websocket=websocket,
-            device_type=device_type
+            device_type=device_type,
+            connected_at=time.time()
         )
         self.device_rooms[device_id] = room_id
         if room_id not in self.rooms:
@@ -40,10 +42,17 @@ class ConnectionManager:
             {
                 "device_id": d, 
                 "device_name": self.devices[d].device_name,
-                "device_type": self.devices[d].device_type
+                "device_type": self.devices[d].device_type,
+                "is_busy": self.devices[d].is_busy
             }
             for d in self.rooms[room_id] if d != exclude_id
         ]
+
+    def update_device_status(self, device_id: str, is_busy: bool):
+        if device_id in self.devices:
+            self.devices[device_id].is_busy = is_busy
+            return self.devices[device_id]
+        return None
 
     async def send_to(self, device_id: str, message: dict):
         if device_id not in self.devices:

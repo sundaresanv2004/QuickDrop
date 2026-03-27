@@ -1,5 +1,8 @@
 from fastapi import APIRouter
 from app.services.connection_manager import manager
+import time
+import sys
+import platform
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -17,9 +20,20 @@ async def get_devices():
         devices.append({
             "device_id": device_id,
             "device_name": info.device_name,
-            "ip": info.ip
+            "ip": info.ip,
+            "device_type": info.device_type,
+            "uptime": int(time.time() - info.connected_at) if info.connected_at > 0 else 0
         })
     return {"devices": devices}
+
+@router.get("/system")
+async def get_system_stats():
+    return {
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "architecture": platform.architecture()[0],
+        "processor": platform.processor(),
+    }
 
 @router.get("/rooms")
 async def get_rooms():

@@ -102,7 +102,19 @@ async def signaling_endpoint(websocket: WebSocket):
                     "type": "peer_joined",
                     "device_id": device_id,
                     "device_name": msg["device_name"],
-                    "device_type": manager.devices[device_id].device_type
+                    "device_type": manager.devices[device_id].device_type,
+                    "is_busy": manager.devices[device_id].is_busy
+                }, exclude_id=device_id)
+
+            elif msg.get("type") == "update_status":
+                is_busy = msg.get("is_busy", False)
+                manager.update_device_status(device_id, is_busy)
+                await manager.broadcast_room(room_id, {
+                    "type": "peer_updated",
+                    "device_id": device_id,
+                    "device_name": manager.devices[device_id].device_name,
+                    "device_type": manager.devices[device_id].device_type,
+                    "is_busy": is_busy
                 }, exclude_id=device_id)
 
             elif msg.get("to") is not None:

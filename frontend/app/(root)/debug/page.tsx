@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { DashboardCircleIcon, Activity01Icon, Search01Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons"
+import { DashboardCircleIcon, Activity01Icon, Search01Icon, ArrowLeft01Icon, SmartPhone01Icon, LaptopIcon, Tablet01Icon, ComputerIcon, Database01Icon } from "@hugeicons/core-free-icons"
 import Link from "next/link"
 
 interface StatsData {
@@ -14,6 +14,15 @@ interface DeviceData {
   device_id: string;
   device_name: string;
   ip: string;
+  device_type: string;
+  uptime: number;
+}
+
+interface SystemData {
+  python_version: string;
+  platform: string;
+  architecture: string;
+  processor: string;
 }
 
 const getApiUrl = (path: string) => {
@@ -43,18 +52,21 @@ export default function DebugDashboardPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [devices, setDevices] = useState<DeviceData[]>([]);
   const [rooms, setRooms] = useState<Record<string, string[]>>({});
+  const [system, setSystem] = useState<SystemData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, devRes, roomRes] = await Promise.all([
+      const [statsRes, devRes, roomRes, sysRes] = await Promise.all([
         fetch(getApiUrl("/debug/stats")),
         fetch(getApiUrl("/debug/devices")),
-        fetch(getApiUrl("/debug/rooms"))
+        fetch(getApiUrl("/debug/rooms")),
+        fetch(getApiUrl("/debug/system"))
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (devRes.ok) setDevices((await devRes.json()).devices);
       if (roomRes.ok) setRooms((await roomRes.json()).rooms);
+      if (sysRes.ok) setSystem(await sysRes.json());
     } catch (e) {
       console.error("Failed to fetch debug data", e);
     } finally {
@@ -67,6 +79,21 @@ export default function DebugDashboardPage() {
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  const formatUptime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  };
+
+  const getDeviceIcon = (deviceType: string) => {
+    switch (deviceType) {
+      case "mobile": return SmartPhone01Icon;
+      case "tablet": return Tablet01Icon;
+      case "desktop": return LaptopIcon;
+      default: return Activity01Icon;
+    }
+  };
 
   if (loading && !stats) {
     return (
@@ -134,20 +161,33 @@ export default function DebugDashboardPage() {
                   <tr>
                     <th className="px-6 py-4 font-medium">Device Name</th>
                     <th className="px-6 py-4 font-medium">Network IP</th>
-                    <th className="px-6 py-4 font-medium">Device ID</th>
+                    <th className="px-6 py-4 font-medium text-xs font-mono">Device ID</th>
+                    <th className="px-6 py-4 font-medium text-right">Uptime</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {devices.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">No active devices</td>
+                      <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">No active devices</td>
                     </tr>
                   ) : (
                     devices.map((d) => (
                       <tr key={d.device_id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-6 py-4 font-medium text-foreground">{d.device_name}</td>
+                        <td className="px-6 py-4 font-medium text-foreground">
+                          <div className="flex items-center gap-3">
+                            <div className="p-1.5 rounded-md bg-secondary/50 text-muted-foreground">
+                              <HugeiconsIcon icon={getDeviceIcon(d.device_type)} className="w-4 h-4" />
+                            </div>
+                            <span>{d.device_name}</span>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 text-muted-foreground font-mono">{d.ip}</td>
-                        <td className="px-6 py-4 text-muted-foreground font-mono text-xs">{d.device_id}</td>
+                        <td className="px-6 py-4 text-muted-foreground font-mono text-xs">{d.device_id.substring(0, 18)}...</td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20">
+                            {formatUptime(d.uptime)}
+                          </span>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -156,38 +196,65 @@ export default function DebugDashboardPage() {
             </div>
           </div>
 
-          {/* Rooms List */}
-          <div className="col-span-1 space-y-4">
-            <h3 className="text-lg font-semibold tracking-tight px-1">Active Rooms</h3>
-            <div className="rounded-2xl border border-border/40 bg-card overflow-hidden shadow-sm">
-              <div className="p-2 space-y-2">
-                {Object.keys(rooms).length === 0 ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">No active rooms</div>
-                ) : (
-                  Object.entries(rooms).map(([ip, peers]) => (
-                    <div key={ip} className="p-4 rounded-xl bg-secondary/30 border border-border/30">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-primary/70 animate-pulse" />
-                          <span className="font-mono text-sm font-medium">{ip}</span>
+          {/* System Info & Rooms List */}
+          <div className="col-span-1 space-y-8">
+            {/* System Info */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold tracking-tight px-1 flex items-center gap-2">
+                <HugeiconsIcon icon={Database01Icon} className="w-5 h-5 text-primary" />
+                System Information
+              </h3>
+              <div className="rounded-2xl border border-border/40 bg-card overflow-hidden shadow-sm p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Python Version</p>
+                    <p className="font-mono text-foreground">{system?.python_version.split(' ')[0]}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Platform</p>
+                    <p className="text-foreground">{system?.platform.split('-')[0]}</p>
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Architecture / Processor</p>
+                    <p className="text-foreground text-xs">{system?.architecture} • {system?.processor}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Rooms List */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold tracking-tight px-1">Active Rooms</h3>
+              <div className="rounded-2xl border border-border/40 bg-card overflow-hidden shadow-sm">
+                <div className="p-2 space-y-2">
+                  {Object.keys(rooms).length === 0 ? (
+                    <div className="p-6 text-center text-sm text-muted-foreground">No active rooms</div>
+                  ) : (
+                    Object.entries(rooms).map(([ip, peers]) => (
+                      <div key={ip} className="p-4 rounded-xl bg-secondary/30 border border-border/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-primary/70 animate-pulse" />
+                            <span className="font-mono text-sm font-medium">{ip}</span>
+                          </div>
+                          <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-0.5 rounded-full border border-border/50">
+                            {peers.length} peers
+                          </span>
                         </div>
-                        <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-0.5 rounded-full border border-border/50">
-                          {peers.length} peers
-                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {peers.map(peerId => {
+                            const dev = devices.find(d => d.device_id === peerId);
+                            return (
+                              <div key={peerId} className="text-xs px-2 py-1 bg-background border border-border/50 rounded-md text-muted-foreground truncate max-w-[140px]" title={dev?.device_name || peerId}>
+                                {dev?.device_name || peerId.substring(0, 8)}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {peers.map(peerId => {
-                          const dev = devices.find(d => d.device_id === peerId);
-                          return (
-                            <div key={peerId} className="text-xs px-2 py-1 bg-background border border-border/50 rounded-md text-muted-foreground truncate max-w-[140px]" title={dev?.device_name || peerId}>
-                              {dev?.device_name || peerId.substring(0, 8)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -62,6 +62,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private fileChannel: RTCDataChannel | null = null;
   private systemChannel: RTCDataChannel | null = null;
   private iceCandidateQueue: RTCIceCandidateInit[] = [];
+  private cleanupTimeout: NodeJS.Timeout | null = null;
 
   // File Transfer State
   private incomingFiles: Map<string, { meta: FileMetaPayload, chunks: ArrayBuffer[], received: number }> = new Map();
@@ -93,6 +94,12 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   }
 
   public setActiveChatPeerId(peerId: string | null) {
+    console.log("[WebRTC] Setting active session:", peerId);
+    if (this.cleanupTimeout) {
+      console.log("[WebRTC] Cancelling pending cleanup for session:", peerId);
+      clearTimeout(this.cleanupTimeout);
+      this.cleanupTimeout = null;
+    }
     this.activeChatPeerId = peerId;
   }
 
@@ -110,8 +117,22 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   // --- ACTIONS ---
 
   private setStatus(newStatus: ConnectionStatus) {
+    const oldStatus = this.status;
     this.status = newStatus;
     this.emit('status', newStatus);
+
+    // Automatic Busy Status Reporting
+    const wasBusy = ["connecting", "connected", "requesting", "receiving"].includes(oldStatus);
+    const isBusy = ["connecting", "connected", "requesting", "receiving"].includes(newStatus);
+    
+    if (wasBusy !== isBusy) {
+      this.broadcastBusyStatus(isBusy);
+    }
+  }
+
+  public broadcastBusyStatus(isBusy: boolean) {
+    console.log("[WebRTC] Broadcasting busy status:", isBusy);
+    this.sendWsMessage({ type: "update_status", is_busy: isBusy });
   }
 
   public sendConnectRequest(peerId: string) {
@@ -143,10 +164,22 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   }
 
   public resetConnection(sessionIdToCleanup?: string) {
-    if (sessionIdToCleanup && sessionIdToCleanup !== this.activeChatPeerId) {
-      console.warn("[SESSION] Ignoring cleanup for stale session:", sessionIdToCleanup);
+    if (this.cleanupTimeout) clearTimeout(this.cleanupTimeout);
+
+    // If a specific session ID is provided, it's likely a React unmount cleanup.
+    // We debounce this to handle React 18 Strict Mode remounts.
+    if (sessionIdToCleanup) {
+      console.log("[WebRTC] Scheduling cleanup for session:", sessionIdToCleanup);
+      this.cleanupTimeout = setTimeout(() => {
+        console.log("[WebRTC] Executing delayed cleanup for session:", sessionIdToCleanup);
+        this.cleanupConnection();
+        this.cleanupTimeout = null;
+      }, 1000); // 1 second buffer is very safe for Strict Mode
       return;
     }
+
+    // Manual / Immediate cleanup (e.g. clicking "Leave" or "Cancel")
+    console.log("[WebRTC] Immediate connection reset requested");
     this.cleanupConnection();
   }
   
@@ -247,15 +280,22 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       case "peer_joined":
         if (msg.device_id === this.myDeviceId) break;
         const exist = this.peers.find(p => p.device_id === msg.device_id);
-        if (exist) { exist.device_name = msg.device_name; exist.device_type = msg.device_type; }
-        else { this.peers.push({ device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type }); }
-        this.emit("peer_joined", { device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type });
+        if (exist) { exist.device_name = msg.device_name; exist.device_type = msg.device_type; exist.is_busy = !!msg.is_busy; }
+        else { this.peers.push({ device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy }); }
+        this.emit("peer_joined", { device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy });
         break;
       case "peer_left":
         this.peers = this.peers.filter(p => p.device_id !== msg.device_id);
         this.emit("peer_left", msg.device_id);
         if (this.activeChatPeerId === msg.device_id) {
           this.cleanupConnection();
+        }
+        break;
+      case "peer_updated":
+        const pIndex = this.peers.findIndex(p => p.device_id === msg.device_id);
+        if (pIndex !== -1) {
+          this.peers[pIndex] = { ...this.peers[pIndex], device_name: msg.device_name, device_type: msg.device_type, is_busy: msg.is_busy };
+          this.emit("peer_list", [...this.peers]);
         }
         break;
       case "connect_request":

@@ -1,5 +1,5 @@
 export type MessageType =
-  | "register" | "welcome" | "peer_list" | "peer_joined" | "peer_left"
+  | "register" | "welcome" | "peer_list" | "peer_joined" | "peer_left" | "peer_updated" | "update_status"
   | "connect_request" | "connect_accept" | "connect_reject" | "connect_cancel"
   | "sdp_offer" | "sdp_answer" | "ice_candidate"
 
@@ -18,6 +18,7 @@ export interface PeerJoinedMessage extends BaseMessage {
   device_id: string
   device_name: string
   device_type: string
+  is_busy: boolean
 }
 export interface PeerLeftMessage extends BaseMessage {
   type: "peer_left"
@@ -55,8 +56,17 @@ export interface Peer {
   device_id: string
   device_name: string
   device_type: string
+  is_busy: boolean
+}
+
+export interface PeerUpdatedMessage extends BaseMessage {
+  type: "peer_updated"
+  device_id: string
+  device_name: string
+  device_type: string
+  is_busy: boolean
 }
 
 export type WSMessage =
-  | WelcomeMessage | PeerListMessage | PeerJoinedMessage | PeerLeftMessage
+  | WelcomeMessage | PeerListMessage | PeerJoinedMessage | PeerLeftMessage | PeerUpdatedMessage
   | ConnectRequestMessage | ConnectResponseMessage | ConnectCancelMessage | SDPMessage | ICEMessage

@@ -65,7 +65,7 @@ export default function DiscoveryPage() {
     myDeviceName,
     peers,
     sendConnectRequest,
-    connectionStatus,
+    status: connectionStatus,
     targetPeerId,
     incomingRequest,
     updateDeviceName,

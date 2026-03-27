@@ -7,7 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { UserCheck01Icon, Wifi01Icon } from "@hugeicons/core-free-icons"
 
 export default function IncomingRequestModal() {
-  const { connectionStatus, incomingRequest, acceptRequest, rejectRequest } = useWebRTC()
+  const { status: connectionStatus, incomingRequest, acceptRequest, rejectRequest } = useWebRTC()
 
   const isOpen = connectionStatus === "receiving" && !!incomingRequest
 

@@ -7,7 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Loading03Icon } from "@hugeicons/core-free-icons"
 
 export default function RequestingModal() {
-  const { connectionStatus, targetPeerId, peers, cancelRequest } = useWebRTC()
+  const { status: connectionStatus, targetPeerId, peers, cancelRequest } = useWebRTC()
 
   const targetPeer = peers.find(p => p.device_id === targetPeerId)
   const isOpen = connectionStatus === "requesting"

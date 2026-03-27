@@ -37,7 +37,9 @@ def normalize_ip_to_room(ip_str: str) -> str:
             # Mask to /64 prefix to group devices on the same local network
             net = ipaddress.IPv6Network(f"{ip_str}/64", strict=False)
             return str(net.network_address)
-        return str(addr)
+        
+        if addr.version == 4:
+            return str(addr)
     except Exception:
         # Fallback to simple split if ipaddress fails for any reason
         if ":" in ip_str:

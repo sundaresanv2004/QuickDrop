@@ -14,15 +14,16 @@ export default function ChatPage() {
   const peerId = params.peerId as string
 
   const {
-    connectionStatus,
+    status: connectionStatus,
     peers,
     messages,
     isTyping,
-    chatChannel,
     sendChatMessage,
     sendSystemMessage,
     resetConnection,
     sendFile,
+    setActiveChatPeerId,
+    chatChannelOpen,
   } = useWebRTC()
 
   // Ref to track if we already cleaned up via handleLeave
@@ -72,16 +73,19 @@ export default function ChatPage() {
     }
   }, [sendSystemMessage, resetConnection, router])
 
-  // Cleanup on component unmount (catches all other nav paths)
+  // ─── Phase 6: Session Management ───
   useEffect(() => {
+    // Mark this peer session as "active" in the Context.
+    // This tells the Context to ignore cleanup requests for other IDs.
+    setActiveChatPeerId(peerId);
+
     return () => {
-      if (!hasCleanedUp.current) {
-        console.warn("[NAV] Chat page unmounted without handleLeave — cleaning up")
-        sendSystemMessage({ type: "bye" })
-        resetConnection()
-      }
-    }
-  }, [sendSystemMessage, resetConnection])
+      // When leaving, we tell the Context which session we are ending.
+      // If a newer mount has already updated activeChatPeerId, 
+      // this cleanup (from the stale mount) will do nothing.
+      resetConnection(peerId);
+    };
+  }, [peerId, setActiveChatPeerId, resetConnection]);
 
   const handleBeforeUnload = () => {
     sendSystemMessage({ type: "bye" })
@@ -98,9 +102,7 @@ export default function ChatPage() {
   const peerName = peer?.device_name ?? "Unknown Device"
   const peerType = peer?.device_type ?? "unknown"
 
-  const isChannelOpen = 
-    chatChannel?.readyState === "open" && 
-    connectionStatus === "connected"
+  const isChannelOpen = chatChannelOpen && connectionStatus === "connected"
 
   const handleLeave = () => {
     hasCleanedUp.current = true

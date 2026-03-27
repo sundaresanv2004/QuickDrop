@@ -149,11 +149,12 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const handlePeerList = useCallback((msg: PeerListMessage) => {
-    setPeers(msg.peers);
-  }, []);
+    setPeers(msg.peers.filter(p => p.device_id !== myDeviceId));
+  }, [myDeviceId]);
 
   const handlePeerJoined = useCallback((msg: PeerJoinedMessage) => {
     setPeers((prev) => {
+      if (msg.device_id === myDeviceId) return prev;
       const existingIdx = prev.findIndex((p) => p.device_id === msg.device_id);
       if (existingIdx !== -1) {
         // If they already exist, update their info
@@ -229,10 +230,23 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [connectionStatus, incomingRequest, sendMessage]);
 
   const cleanupPeerConnection = useCallback(() => {
-    chatRef.current?.close();
-    fileRef.current?.close();
-    systemRef.current?.close();
-    pcRef.current?.close();
+    // Close only if not already null
+    if (chatRef.current) {
+      chatRef.current.close()
+      chatRef.current = null
+    }
+    if (fileRef.current) {
+      fileRef.current.close()
+      fileRef.current = null
+    }
+    if (systemRef.current) {
+      systemRef.current.close()
+      systemRef.current = null
+    }
+    if (pcRef.current) {
+      pcRef.current.close()
+      pcRef.current = null
+    }
 
     setChatChannel(null);
     setFileChannel(null);
@@ -601,7 +615,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const sendSystemMessage = useCallback((payload: SystemPayload) => {
     if (!systemRef.current || systemRef.current.readyState !== "open") {
-      console.warn("[SYSTEM] Cannot send — channel not open");
+      // Silently ignore — channel may already be closed
       return;
     }
     systemRef.current.send(JSON.stringify(payload));

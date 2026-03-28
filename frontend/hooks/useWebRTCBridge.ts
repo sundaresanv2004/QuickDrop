@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { webRTCManager, ConnectionStatus } from '@/lib/webrtc/WebRTCManager';
 import { Peer } from '@/types/messages';
 import { ChatMessage, SystemPayload } from '@/types/chat';
+import { toast } from 'sonner';
 
 export function useWebRTCBridge() {
   const [status, setStatus] = useState<ConnectionStatus>(webRTCManager.status);
@@ -27,7 +28,6 @@ export function useWebRTCBridge() {
     // Peer updates
     const unsubPeers = webRTCManager.on('peer_list', setPeers);
     const unsubJoin = webRTCManager.on('peer_joined', () => setPeers([...webRTCManager.peers]));
-    const unsubLeft = webRTCManager.on('peer_left', () => setPeers([...webRTCManager.peers]));
     
     // Chat messages
     const unsubChat = webRTCManager.on('chat_message', (msg) => {
@@ -81,6 +81,23 @@ export function useWebRTCBridge() {
 
     const unsubTyping = webRTCManager.on('typing_state', setIsTyping);
 
+    // Notifications
+    const unsubRejected = webRTCManager.on('request_rejected', (_peerId, _peerName) => {
+      toast.error('Connection request declined');
+    });
+    const unsubCancelled = webRTCManager.on('request_cancelled', (_peerId, peerName) => {
+      toast.info(`Request from ${peerName} was cancelled`);
+    });
+    const unsubConnErr = webRTCManager.on('connection_error', (msg) => {
+      toast.error(`Connection failed: ${msg}`);
+    });
+    const unsubPeerLeft = webRTCManager.on('peer_left', (id) => {
+      if (id === webRTCManager.targetPeerId && (webRTCManager.status === "connected" || webRTCManager.status === "connecting")) {
+        toast.warning("Peripheral peer disconnected.");
+      }
+      setPeers([...webRTCManager.peers]);
+    });
+
     return () => {
       unsubWs();
       unsubInfo();
@@ -88,13 +105,16 @@ export function useWebRTCBridge() {
       unsubReq();
       unsubPeers();
       unsubJoin();
-      unsubLeft();
       unsubChat();
       unsubReaction();
       unsubFileProg();
       unsubFileComp();
       unsubFileErr();
       unsubTyping();
+      unsubRejected();
+      unsubCancelled();
+      unsubConnErr();
+      unsubPeerLeft();
     };
   }, []);
 

@@ -23,6 +23,9 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'my_info_updated': [name: string, type: string];
   'status': [status: ConnectionStatus];
   'incoming_request': [peerId: string, peerName: string];
+  'request_rejected': [peerId: string, peerName: string];
+  'request_cancelled': [peerId: string, peerName: string];
+  'connection_error': [message: string];
   'peer_list': [peers: Peer[]];
   'peer_joined': [peer: Peer];
   'peer_left': [peerId: string];
@@ -335,7 +338,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         break;
       case "connect_cancel":
         if (this.status === "receiving" && this.incomingRequest?.peerId === msg.from_id) {
+          const cancellerName = this.peers.find(p => p.device_id === msg.from_id)?.device_name ?? "Unknown Device";
           this.cancelSession();
+          this.emit('request_cancelled', msg.from_id, cancellerName);
         }
         break;
       case "connect_accept":
@@ -354,7 +359,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         break;
       case "connect_reject":
         if (this.status === "requesting") {
+          const rejecterName = this.peers.find(p => p.device_id === msg.from_id)?.device_name ?? "Unknown Device";
           this.setStatus("rejected");
+          this.emit('request_rejected', msg.from_id, rejecterName);
           this.targetPeerId = null;
           setTimeout(() => this.setStatus("idle"), 3000);
         }

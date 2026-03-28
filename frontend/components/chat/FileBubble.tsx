@@ -146,11 +146,22 @@ export default function FileBubble({ message }: FileBubbleProps) {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div 
+              className={cn(
+                "flex items-center gap-2",
+                !isSent && file.status === "complete" ? "cursor-pointer" : ""
+              )}
+              onClick={(e) => {
+                if (!isSent && file.status === "complete") {
+                  e.stopPropagation();
+                  handleDownload();
+                }
+              }}
+            >
               <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", isSent ? "bg-primary-foreground/15" : "bg-background/50")}>
                 <HugeiconsIcon icon={getFileIconForMime(file.mimeType)} size={18} color="currentColor" />
               </div>
-
+ 
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold truncate leading-tight">{file.name}</p>
                 <p className={cn("text-[10px] mt-0.5", isSent ? "text-primary-foreground/70" : "text-muted-foreground")}>
@@ -159,7 +170,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                   {file.status === "receiving" && file.progress > 0 && ` · ${file.progress}%`}
                 </p>
               </div>
-
+ 
               {(file.status === "sending" || file.status === "receiving") && (
                 <div className="flex items-center gap-1.5">
                   {!isSent && file.status === "receiving" && file.streamingMode && file.progress === 0 && (
@@ -189,31 +200,30 @@ export default function FileBubble({ message }: FileBubbleProps) {
               <FileProgressBar progress={file.progress} className={cn("h-1", isSent ? "[&>div]:bg-primary-foreground" : "")} />
             )}
 
-            <div className={cn("flex items-center gap-2 mt-1", isSent ? "justify-end" : "justify-between flex-row-reverse")}>
-              <div className="flex items-center gap-1.5 opacity-70">
-                {file.status === "sending" && (
-                  <span className="text-[9px] font-bold uppercase tracking-tight">Sending...</span>
-                )}
-                {file.status === "receiving" && (
-                  <>
-                    <HugeiconsIcon icon={Loading03Icon} size={10} className="animate-spin" />
-                    <span className="text-[9px] font-bold uppercase tracking-tight">
-                      {file.streamingMode && file.progress === 0 ? "Awaiting Approve" : "Receiving..."}
-                    </span>
-                  </>
-                )}
-                {file.status === "complete" && (
-                  <span className={cn("text-[9px] font-bold uppercase tracking-tight", isSent ? "text-blue-200" : "text-green-500")}>
-                    {file.streamingMode ? "Disk Saved" : "Ready"}
-                  </span>
-                )}
-                {file.status === "error" && (
-                  <span className="text-[9px] font-bold uppercase tracking-tight text-destructive">Error</span>
-                )}
-              </div>
+            <div className={cn("flex items-center gap-1.5 mt-1", isSent ? "justify-end" : "justify-between")}>
               <span className={cn("text-[9px] font-medium opacity-60", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
                 {formatTimestamp(message.timestamp)}
               </span>
+              
+              {!isSent && file.status === "complete" && (
+                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight opacity-70">
+                  TAP TO DOWNLOAD
+                </span>
+              )}
+
+              {isSent && (
+                <div className="flex items-center opacity-60">
+                  {file.status === "sending" && (
+                    <HugeiconsIcon icon={Tick01Icon} size={12} className={cn(isSent ? "text-primary-foreground" : "text-muted-foreground")} />
+                  )}
+                  {file.status === "complete" && (
+                    <HugeiconsIcon icon={TickDouble01Icon} size={13} className={cn(isSent ? "text-primary-foreground" : "text-muted-foreground")} />
+                  )}
+                  {file.status === "error" && (
+                    <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive" />
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

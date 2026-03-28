@@ -12,7 +12,6 @@ import RequestingModal from "@/components/handshake/RequestingModal"
 import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Loading03Icon, PencilEdit02Icon, CheckmarkCircle01Icon, Cancel01Icon, ShuffleIcon } from "@hugeicons/core-free-icons"
-import Image from "next/image"
 import { Input } from "@/components/ui/input"
 import {
   Tooltip,
@@ -225,7 +224,7 @@ export default function DiscoveryPage() {
 
       {/* Logo + Brand — top left */}
       <div className="fixed top-4 left-4 sm:top-6 sm:left-6 z-50 flex items-center gap-2 sm:gap-2.5 opacity-60 hover:opacity-100 transition-opacity duration-300">
-        <Image src="/logo.png" alt="QuickDrop" width={24} height={24} className="rounded-md sm:w-[28px] sm:h-[28px]" />
+        {/* <Image src="/logo.png" alt="QuickDrop" width={24} height={24} className="rounded-md sm:w-[28px] sm:h-[28px]" /> */}
         <span className="text-xs sm:text-sm font-bold tracking-tight text-foreground/70">QuickDrop</span>
       </div>
 

@@ -3,7 +3,7 @@ import { cn, formatTimestamp } from "@/lib/utils"
 import { useWebRTC } from "@/context/WebRTCContext"
 import { useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { SmileIcon } from "@hugeicons/core-free-icons"
+import { SmileIcon, TickDouble01Icon } from "@hugeicons/core-free-icons"
 import {
   Popover,
   PopoverContent,
@@ -91,10 +91,17 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
             <p className="text-sm leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
               {message.content}
             </p>
-            <div className={cn("flex -mt-1.5 opacity-70", isSent ? "justify-end" : "justify-start")}>
-              <span className={cn("text-[10px] select-none whitespace-nowrap", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
+            <div className={cn("flex items-center gap-1 mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
+              <span className={cn("text-[9px] select-none whitespace-nowrap font-medium", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
                 {formatTimestamp(message.timestamp)}
               </span>
+              {isSent && (
+                <HugeiconsIcon 
+                  icon={TickDouble01Icon} 
+                  size={12} 
+                  className={cn("opacity-70", isSent ? "text-primary-foreground" : "text-muted-foreground")} 
+                />
+              )}
             </div>
           </div>
 

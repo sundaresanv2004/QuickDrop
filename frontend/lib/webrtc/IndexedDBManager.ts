@@ -6,6 +6,9 @@ export class IndexedDBManager {
 
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (typeof window === "undefined") {
+        return resolve();
+      }
       const request = indexedDB.open(this.dbName, this.version);
 
       request.onupgradeneeded = (event) => {

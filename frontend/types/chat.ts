@@ -87,6 +87,16 @@ export interface FileRejectedPayload {
   fileId: string
 }
 
+export interface PauseTransferPayload {
+  type: "pause_transfer"
+  fileId: string
+}
+
+export interface ResumeTransferPayload {
+  type: "resume_transfer"
+  fileId: string
+}
+
 // Union of all system channel payloads
 export type SystemPayload =
   | FileMetaPayload
@@ -94,6 +104,8 @@ export type SystemPayload =
   | TypingPayload
   | ByePayload
   | FileRejectedPayload
+  | PauseTransferPayload
+  | ResumeTransferPayload
 
 export interface ReactionMessagePayload {
   type:      "reaction_message"

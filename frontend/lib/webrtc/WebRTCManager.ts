@@ -74,7 +74,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     meta: FileMetaPayload, 
     received: number, 
     completed: number,
-    chunkBuffer: { chunkIndex: number, data: ArrayBuffer }[]
+    chunkBuffer: { chunkIndex: number, data: ArrayBuffer }[],
+    isPaused?: boolean
   }> = new Map();
   private fileTransferQueue: string[] = []; 
   private senderFileQueue: FileUploadTask[] = [];
@@ -82,9 +83,25 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private pendingStreamApprovals: Map<string, (allowed: boolean) => void> = new Map();
   private activeFileStreams: Map<string, FileSystemWritableFileStream> = new Map();
 
+  // Flow Control (Sender-side pause state)
+  private remoteTransferPaused: boolean = false;
+  private pauseResolver: (() => void) | null = null;
+
+  // Sequential write queues: ensures chunks are written to disk in order,
+  // one at a time, preventing multiple concurrent async handlers from
+  // accumulating ArrayBuffers in RAM.
+  private fileWriteQueues: Map<string, Promise<void>> = new Map();
+
   constructor() {
     super();
     this.dbManager.init().catch(err => console.error("[IndexedDB] Init failed:", err));
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", () => {
+        // Clear all temporary transfer data on tab close
+        this.dbManager.clearAll().catch(() => {});
+      });
+    }
   }
 
   // --- PUBLIC API ---
@@ -540,84 +557,91 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
             this.pendingStreamApprovals.delete(payload.fileId);
           }
           break;
+        case "pause_transfer":
+          console.log(`[WebRTC] Receiver requested PAUSE for ${payload.fileId}`);
+          this.remoteTransferPaused = true;
+          break;
+        case "resume_transfer":
+          console.log(`[WebRTC] Receiver requested RESUME for ${payload.fileId}`);
+          this.remoteTransferPaused = false;
+          if (this.pauseResolver) {
+            this.pauseResolver();
+            this.pauseResolver = null;
+          }
+          break;
       }
     } catch { console.error("Failed to parse system message"); }
   }
 
-  private async handleFileMessage(event: MessageEvent) {
+  private handleFileMessage(event: MessageEvent) {
     if (!(event.data instanceof ArrayBuffer)) return;
     const activeFileId = this.fileTransferQueue[0];
     if (!activeFileId) return;
     const transfer = this.incomingFiles.get(activeFileId);
     if (!transfer) return;
 
-    const stream = this.activeFileStreams.get(activeFileId);
+    // Capture data immediately to avoid holding the event object
+    const data: ArrayBuffer = event.data;
+    const chunkIndex = transfer.received;
+    transfer.received += 1;
 
-    if (stream) {
-      // Disk Streaming Mode (Large Files)
+    // Emit wire-level progress immediately (smooth UI updates)
+    const wireProgress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
+    this.emit("file_progress", activeFileId, wireProgress);
+
+    // Shift queue immediately when all bytes arrive over the wire
+    if (transfer.received === transfer.meta.totalChunks) {
+      this.fileTransferQueue.shift();
+    }
+
+    // Backpressure: count unwritten chunks awaiting the write queue
+    const pending = (transfer as any)._pendingWrites ?? 0;
+    (transfer as any)._pendingWrites = pending + 1;
+    if (pending >= 25 && !transfer.isPaused) {
+      this.sendSystemMessage({ type: "pause_transfer", fileId: activeFileId });
+      transfer.isPaused = true;
+    }
+
+    // CRITICAL: Chain onto a per-file sequential promise queue.
+    // This ensures chunks are written ONE AT A TIME in order,
+    // preventing concurrent async handlers from holding many ArrayBuffers.
+    const prevWrite = this.fileWriteQueues.get(activeFileId) ?? Promise.resolve();
+    const thisWrite = prevWrite.then(async () => {
+      const stream = this.activeFileStreams.get(activeFileId);
       try {
-        await (stream as any).write(event.data);
+        if (stream) {
+          await (stream as any).write(data);
+        } else {
+          await this.dbManager.addChunks(activeFileId, [{ chunkIndex, data }]);
+        }
       } catch (err) {
-        console.error("[WebRTC] Disk write failed:", err);
-        this.emit("file_error", activeFileId, "Disk write failed");
+        console.error("[WebRTC] Write failed:", err);
+        this.emit("file_error", activeFileId, "Write failed");
+        return;
       }
-      transfer.received += 1;
       transfer.completed += 1;
-      
-      this.emit("file_progress", activeFileId, Math.round((transfer.received / transfer.meta.totalChunks) * 100));
+
+      // Decrement pending, resume sender if pressure drops
+      const remaining = ((transfer as any)._pendingWrites ?? 1) - 1;
+      (transfer as any)._pendingWrites = remaining;
+      if (transfer.isPaused && remaining < 5) {
+        this.sendSystemMessage({ type: "resume_transfer", fileId: activeFileId });
+        transfer.isPaused = false;
+      }
 
       if (transfer.completed === transfer.meta.totalChunks) {
-        try {
-          await (stream as any).close();
+        if (stream) {
+          try { await (stream as any).close(); } catch {}
           this.activeFileStreams.delete(activeFileId);
           this.emit("file_complete", activeFileId, "");
-        } catch {}
+        } else {
+          this.emit("file_complete", activeFileId, null);
+        }
         this.incomingFiles.delete(activeFileId);
-        this.fileTransferQueue.shift();
+        this.fileWriteQueues.delete(activeFileId);
       }
-    } else {
-      // IndexedDB Accumulation Mode (Bypass RAM via Batching)
-      const chunkIndex = transfer.received;
-      transfer.received += 1;
-      transfer.chunkBuffer.push({ chunkIndex, data: event.data });
-
-      // Calculate progress based on WIRE arrival
-      const wireProgress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
-      if (wireProgress % 5 === 0 || transfer.received === transfer.meta.totalChunks) {
-        this.emit("file_progress", activeFileId, wireProgress);
-      }
-
-      // 1. If wire-transfer is done, IMMEDIATELY shift queue so next file can start receiving
-      const isWireComplete = transfer.received === transfer.meta.totalChunks;
-      if (isWireComplete) {
-        this.fileTransferQueue.shift();
-      }
-
-      // 2. Batch write if buffer is full OR it's the very last chunk
-      if (transfer.chunkBuffer.length >= 20 || isWireComplete) {
-        const bufferToFlush = [...transfer.chunkBuffer];
-        transfer.chunkBuffer = [];
-
-        // Run writing in background so it doesn't block the next chunk arrival
-        // Note: Using a closure to keep a reference to 'transfer' and 'activeFileId'
-        (async (fileId, currentTransfer, batch) => {
-          try {
-            await this.dbManager.addChunks(fileId, batch);
-            currentTransfer.completed += batch.length;
-
-            // 3. Final Assembly Logic
-            if (currentTransfer.completed === currentTransfer.meta.totalChunks) {
-              console.log(`[WebRTC] Receiver disk-write complete: ${fileId}`);
-              this.emit("file_complete", fileId, null);
-              this.incomingFiles.delete(fileId);
-            }
-          } catch (err) {
-            console.error("[IndexedDB] Batch write failed:", err);
-            this.emit("file_error", fileId, "Database write failed");
-          }
-        })(activeFileId, transfer, bufferToFlush);
-      }
-    }
+    });
+    this.fileWriteQueues.set(activeFileId, thisWrite);
   }
 
 
@@ -672,74 +696,65 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         continue;
       }
 
-      console.log(`[WebRTC] Starting stream for ${task.fileId}`);
-      const reader = task.file.stream().getReader();
+      console.log(`[WebRTC] Starting ZERO-RAM stream for ${task.fileId}`);
+      // Set explicit thresholds so bufferedamountlow fires at the right watermark
+      const LOW_WATERMARK = 256 * 1024;  // 256 KB: resume sending when buffer drops to this
+      const HIGH_WATERMARK = 1024 * 1024; // 1 MB: pause sending when buffer exceeds this
+      if (this.fileChannel) {
+        this.fileChannel.bufferedAmountLowThreshold = LOW_WATERMARK;
+      }
+
       try {
         let totalSentChunks = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        let offset = 0;
 
-          let offset = 0;
-          while (offset < value.byteLength) {
-            if (!this.fileChannel || this.fileChannel.readyState !== "open") {
-              console.error(`[WebRTC] File channel not open during transfer for ${task.fileId}. State: ${this.fileChannel?.readyState}`);
-              this.emit("file_error", task.fileId, "Channel closed during transfer");
-              return;
-            }
-
-            // Robust Flow Control
-            if (this.fileChannel.bufferedAmount > this.fileChannel.bufferedAmountLowThreshold) {
-              console.log(`[WebRTC] Buffered amount high for ${task.fileId}. Waiting...`);
-              await new Promise<void>((resolve) => {
-                const onLow = () => {
-                  this.fileChannel?.removeEventListener("bufferedamountlow", onLow);
-                  resolve();
-                };
-                this.fileChannel?.addEventListener("bufferedamountlow", onLow);
-                setTimeout(onLow, 200); // 200ms fallback
-              });
-              console.log(`[WebRTC] Buffered amount low for ${task.fileId}. Resuming.`);
-            }
-
-            const end = Math.min(offset + CHUNK_SIZE, value.byteLength);
-            // Use subarray for zero-copy slicing, most browsers support sending it directly
-            const subChunk = value.subarray(offset, end);
-            
-            try {
-              // Create a fresh copy to ensure no shared-buffer issues or oversized native sends
-              const finalData = new Uint8Array(subChunk);
-              this.fileChannel.send(finalData);
-              
-              totalSentChunks++;
-              offset += CHUNK_SIZE;
-
-              // Progress update
-              if (totalSentChunks % 25 === 0 || totalSentChunks >= totalChunks) {
-                this.emit("file_progress", task.fileId, Math.min(100, Math.round((totalSentChunks / totalChunks) * 100)));
-              }
-
-              // Yield to event loop to prevent "Failure to send data" (SCTP congestion)
-              if (totalSentChunks % 5 === 0) {
-                await new Promise(resolve => setTimeout(resolve, 5)); // Slightly longer delay
-              }
-            } catch (err) {
-              console.error("[WebRTC] Native send failure:", err);
-              this.emit("file_error", task.fileId, "Send failed");
-              return;
-            }
+        while (offset < task.file.size) {
+          if (!this.fileChannel || this.fileChannel.readyState !== "open") {
+            this.emit("file_error", task.fileId, "Channel closed during transfer");
+            return;
           }
+
+          // Flow Control: wait only when local WebRTC buffer is actually full
+          if (this.fileChannel.bufferedAmount >= HIGH_WATERMARK) {
+            await new Promise<void>((resolve) => {
+              const onLow = () => {
+                this.fileChannel?.removeEventListener("bufferedamountlow", onLow);
+                resolve();
+              };
+              this.fileChannel?.addEventListener("bufferedamountlow", onLow);
+              setTimeout(onLow, 500); // Safety: 500ms max wait
+            });
+          }
+
+          // Application-level backpressure from receiver
+          if (this.remoteTransferPaused) {
+            await new Promise<void>(resolve => {
+              this.pauseResolver = resolve;
+              setTimeout(resolve, 5000); // 5s safety timeout
+            });
+          }
+
+          // Surgical slice: only 16 KB in JS heap at this point
+          const end = Math.min(offset + CHUNK_SIZE, task.file.size);
+          const chunkData = await task.file.slice(offset, end).arrayBuffer();
+          // Send ArrayBuffer directly (no extra Uint8Array copy)
+          this.fileChannel.send(chunkData);
+          offset = end; // Use end (not offset + CHUNK_SIZE) to avoid overshoot
+          totalSentChunks++;
+
+          // Update progress every 50 chunks (~800 KB)
+          if (totalSentChunks % 50 === 0 || offset >= task.file.size) {
+            this.emit("file_progress", task.fileId, Math.min(100, Math.round((offset / task.file.size) * 100)));
+          }
+          // No setTimeout(0) — the await above yields naturally to the event loop
         }
 
-        // We don't have a Blob URL for our own sent file in streaming mode 
-        // because we never held it all in memory.
         this.emit("file_complete", task.fileId, ""); 
-        console.log(`[WebRTC] Stream complete: ${task.fileId}`);
+        this.remoteTransferPaused = false;
+        console.log(`[WebRTC] ZERO-RAM stream complete: ${task.fileId}`);
       } catch (err) {
         console.error("[WebRTC] Stream error:", err);
         this.emit("file_error", task.fileId, "Streaming error");
-      } finally {
-        reader.releaseLock();
       }
 
       this.senderFileQueue.shift();

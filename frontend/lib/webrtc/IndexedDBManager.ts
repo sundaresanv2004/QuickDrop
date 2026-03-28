@@ -3,6 +3,7 @@ export class IndexedDBManager {
   private storeName = "file_chunks";
   private db: IDBDatabase | null = null;
   private version = 1;
+  private initFinished: Promise<void> | null = null;
 
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -10,6 +11,10 @@ export class IndexedDBManager {
         return resolve();
       }
       const request = indexedDB.open(this.dbName, this.version);
+
+      // On startup, we want to clear any leftover fragments from crashed sessions
+      // so we don't waste the user's mobile storage.
+      this.initFinished = this.clearAll().catch(() => {});
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -104,7 +109,7 @@ export class IndexedDBManager {
         }
       };
       
-      request.onerror = () => reject(request.error);
+      request.onerror = () => reject(transaction.error);
     });
   }
 

@@ -336,15 +336,34 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       case "peer_joined":
         if (msg.device_id === this.myDeviceId) break;
         const exist = this.peers.find(p => p.device_id === msg.device_id);
-        if (exist) { exist.device_name = msg.device_name; exist.device_type = msg.device_type; exist.is_busy = !!msg.is_busy; }
-        else { this.peers.push({ device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy }); }
-        this.emit("peer_joined", { device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy });
+        if (exist) {
+          exist.device_name = msg.device_name;
+          exist.device_type = msg.device_type;
+          exist.is_busy = !!msg.is_busy;
+        } else {
+          this.peers.push({ 
+            device_id: msg.device_id, 
+            device_name: msg.device_name, 
+            device_type: msg.device_type, 
+            is_busy: !!msg.is_busy 
+          });
+        }
+        this.emit("peer_joined", { 
+          device_id: msg.device_id, 
+          device_name: msg.device_name, 
+          device_type: msg.device_type, 
+          is_busy: !!msg.is_busy 
+        });
         break;
       case "peer_left":
         this.peers = this.peers.filter(p => p.device_id !== msg.device_id);
         this.emit("peer_left", msg.device_id);
-        if (this.activeChatPeerId === msg.device_id) {
-          this.cleanupConnection();
+        
+        // CRITICAL CLEANUP: If our active partner leaves, kill transfers
+        if (this.targetPeerId === msg.device_id) {
+          this.failAllActiveTransfers("Peer left the chat");
+          this.setStatus("idle");
+          this.targetPeerId = null;
         }
         break;
       case "peer_updated":
@@ -460,6 +479,32 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         this.sendWsMessage({ type: "ice_candidate", to: this.targetPeerId, candidate: event.candidate.toJSON() });
       }
     };
+
+    this.pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection state: ${this.pc?.connectionState}`);
+      if (this.pc?.connectionState === "failed" || this.pc?.connectionState === "closed" || this.pc?.connectionState === "disconnected") {
+        this.failAllActiveTransfers("Connection lost or peer disconnected");
+      }
+    };
+  }
+
+  private failAllActiveTransfers(reason: string) {
+    console.warn(`[WebRTC] Failing all active transfers: ${reason}`);
+    
+    // 1. Fail incoming transfers
+    for (const [fileId, transfer] of this.incomingFiles) {
+      this.emit("file_error", fileId, reason);
+    }
+    this.incomingFiles.clear();
+    this.fileTransferQueue = [];
+    this.fileWriteQueues.clear();
+
+    // 2. Fail outgoing transfers
+    for (const task of this.senderFileQueue) {
+      this.emit("file_error", task.fileId, reason);
+    }
+    this.senderFileQueue = [];
+    this.isProcessingQueue = false;
   }
 
   private async flushIceCandidates() {
@@ -580,68 +625,82 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     const transfer = this.incomingFiles.get(activeFileId);
     if (!transfer) return;
 
-    // Capture data immediately to avoid holding the event object
+    // Capture data immediately
     const data: ArrayBuffer = event.data;
     const chunkIndex = transfer.received;
     transfer.received += 1;
+
+    // Accumulate for batching
+    transfer.chunkBuffer.push({ chunkIndex, data });
 
     // Emit wire-level progress immediately (smooth UI updates)
     const wireProgress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
     this.emit("file_progress", activeFileId, wireProgress);
 
     // Shift queue immediately when all bytes arrive over the wire
-    if (transfer.received === transfer.meta.totalChunks) {
+    const isWireComplete = transfer.received === transfer.meta.totalChunks;
+    if (isWireComplete) {
       this.fileTransferQueue.shift();
     }
 
-    // Backpressure: count unwritten chunks awaiting the write queue
+    // Backpressure: Threshold increased to 100 chunks for high-speed networks
     const pending = (transfer as any)._pendingWrites ?? 0;
     (transfer as any)._pendingWrites = pending + 1;
-    if (pending >= 25 && !transfer.isPaused) {
+    if (pending >= 100 && !transfer.isPaused) {
       this.sendSystemMessage({ type: "pause_transfer", fileId: activeFileId });
       transfer.isPaused = true;
     }
 
-    // CRITICAL: Chain onto a per-file sequential promise queue.
-    // This ensures chunks are written ONE AT A TIME in order,
-    // preventing concurrent async handlers from holding many ArrayBuffers.
-    const prevWrite = this.fileWriteQueues.get(activeFileId) ?? Promise.resolve();
-    const thisWrite = prevWrite.then(async () => {
-      const stream = this.activeFileStreams.get(activeFileId);
-      try {
-        if (stream) {
-          await (stream as any).write(data);
-        } else {
-          await this.dbManager.addChunks(activeFileId, [{ chunkIndex, data }]);
-        }
-      } catch (err) {
-        console.error("[WebRTC] Write failed:", err);
-        this.emit("file_error", activeFileId, "Write failed");
-        return;
-      }
-      transfer.completed += 1;
+    // Batch writing (group of 50 chunks OR very last chunk)
+    if (transfer.chunkBuffer.length >= 50 || isWireComplete) {
+      const batch = [...transfer.chunkBuffer];
+      transfer.chunkBuffer = [];
 
-      // Decrement pending, resume sender if pressure drops
-      const remaining = ((transfer as any)._pendingWrites ?? 1) - 1;
-      (transfer as any)._pendingWrites = remaining;
-      if (transfer.isPaused && remaining < 5) {
-        this.sendSystemMessage({ type: "resume_transfer", fileId: activeFileId });
-        transfer.isPaused = false;
-      }
-
-      if (transfer.completed === transfer.meta.totalChunks) {
-        if (stream) {
-          try { await (stream as any).close(); } catch {}
-          this.activeFileStreams.delete(activeFileId);
-          this.emit("file_complete", activeFileId, "");
-        } else {
-          this.emit("file_complete", activeFileId, null);
+      // CRITICAL: Chain onto a per-file sequential promise queue.
+      // This ensures batches are written ONE AT A TIME in order.
+      const prevWrite = this.fileWriteQueues.get(activeFileId) ?? Promise.resolve();
+      const thisWrite = prevWrite.then(async () => {
+        const stream = this.activeFileStreams.get(activeFileId);
+        try {
+          if (stream) {
+            // Streaming mode: Write chunks sequentially within the batch
+            for (const item of batch) {
+              await (stream as any).write(item.data);
+            }
+          } else {
+            // IndexedDB mode: High-efficiency multi-row insert
+            await this.dbManager.addChunks(activeFileId, batch);
+          }
+        } catch (err) {
+          console.error("[WebRTC] Write failed:", err);
+          this.emit("file_error", activeFileId, "Write failed");
+          return;
         }
-        this.incomingFiles.delete(activeFileId);
-        this.fileWriteQueues.delete(activeFileId);
-      }
-    });
-    this.fileWriteQueues.set(activeFileId, thisWrite);
+        
+        transfer.completed += batch.length;
+
+        // Decrement pending (by batch size), resume sender if pressure drops
+        const remaining = ((transfer as any)._pendingWrites ?? 0) - batch.length;
+        (transfer as any)._pendingWrites = Math.max(0, remaining);
+        if (transfer.isPaused && remaining < 20) {
+          this.sendSystemMessage({ type: "resume_transfer", fileId: activeFileId });
+          transfer.isPaused = false;
+        }
+
+        if (transfer.completed === transfer.meta.totalChunks) {
+          if (stream) {
+            try { await (stream as any).close(); } catch {}
+            this.activeFileStreams.delete(activeFileId);
+            this.emit("file_complete", activeFileId, "");
+          } else {
+            this.emit("file_complete", activeFileId, null);
+          }
+          this.incomingFiles.delete(activeFileId);
+          this.fileWriteQueues.delete(activeFileId);
+        }
+      });
+      this.fileWriteQueues.set(activeFileId, thisWrite);
+    }
   }
 
 
@@ -656,7 +715,12 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       console.log(`[WebRTC] Processing file: ${task.file.name} (${task.fileId})`);
 
       const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
-      const streamingMode = task.file.size >= 500 * 1024 * 1024; // 500MB Threshold
+      
+      // DEVICE-AWARE: Only use streaming if file is large AND browser supports it
+      const streamingMode = 
+        task.file.size >= 500 * 1024 * 1024 && 
+        typeof window !== 'undefined' && 
+        !!(window as any).showSaveFilePicker;
 
       const meta: FileMetaPayload = { 
         type: "file_meta", 

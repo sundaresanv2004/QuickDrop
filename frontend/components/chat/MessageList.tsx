@@ -111,7 +111,7 @@ export default function MessageList({ messages, isTyping, peerName }: MessageLis
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto px-3 sm:px-4 py-4 overscroll-contain"
+        className="h-full overflow-y-auto px-3 sm:px-4 py-4 overscroll-none touch-pan-y"
       >
         {messages.map((msg, index) => {
           const prevMsg = messages[index - 1]

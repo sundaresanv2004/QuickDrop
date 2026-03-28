@@ -62,10 +62,18 @@ export function useWebRTCBridge() {
 
     // File updates
     const unsubFileProg = webRTCManager.on('file_progress', (fileId, progress) => {
-      setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, progress } } : m));
+      setMessages(prev => prev.map(m => 
+        m.id === fileId && m.type === 'file' && m.file 
+          ? { ...m, file: { ...m.file, progress, status: progress === 100 ? 'complete' : m.file.status } } 
+          : m
+      ));
     });
     const unsubFileComp = webRTCManager.on('file_complete', (fileId, url) => {
-      setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, progress: 100, status: 'complete', objectUrl: url } } : m));
+      setMessages(prev => prev.map(m => 
+        m.id === fileId && m.type === 'file' && m.file 
+          ? { ...m, file: { ...m.file, progress: 100, status: 'complete', objectUrl: url ?? m.file.objectUrl } } 
+          : m
+      ));
     });
     const unsubFileErr = webRTCManager.on('file_error', (fileId, err) => {
       setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, status: 'error' } } : m));

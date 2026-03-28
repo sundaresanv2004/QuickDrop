@@ -35,8 +35,8 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'typing_state': [isTyping: boolean];
 }
 
-const CHUNK_SIZE = 64 * 1024;
-const MAX_BUFFERED_AMOUNT = 1024 * 1024;
+const CHUNK_SIZE = 16 * 1024; // 16KB for maximum compatibility
+const MAX_BUFFERED_AMOUNT = 1024 * 1024; // 1MB total buffer
 
 export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   // Config & State
@@ -69,6 +69,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private fileTransferQueue: string[] = []; 
   private senderFileQueue: FileUploadTask[] = [];
   private isProcessingQueue: boolean = false;
+  private pendingStreamApprovals: Map<string, (allowed: boolean) => void> = new Map();
+  private activeFileStreams: Map<string, FileSystemWritableFileStream> = new Map();
 
   constructor() {
     super();
@@ -163,6 +165,24 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.cancelSession();
   }
 
+  public async acceptLargeFileStream(fileId: string, writableStream: any) {
+    const transfer = this.incomingFiles.get(fileId);
+    if (!transfer || !transfer.meta.streamingMode) {
+      console.warn(`[WebRTC] Attempted to accept stream for non-streaming or unknown file: ${fileId}`);
+      return;
+    }
+    console.log(`[WebRTC] Accepting large file stream for ${fileId}`);
+    try {
+      // For FileSystemWritableFileStream, we can use it directly or get a writer
+      const writer = writableStream.getWriter ? writableStream.getWriter() : writableStream;
+      this.activeFileStreams.set(fileId, writer);
+      this.sendSystemMessage({ type: "stream_ready", fileId });
+    } catch (err) {
+      console.error("[WebRTC] Failed to initialize stream writer:", err);
+      this.emit("file_error", fileId, "Stream initialization failed");
+    }
+  }
+
   public resetConnection(sessionIdToCleanup?: string) {
     if (this.cleanupTimeout) clearTimeout(this.cleanupTimeout);
 
@@ -222,12 +242,21 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.senderFileQueue.push({ file, fileId });
     
     // Announce to UI
+    const objectUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
     const fileMessage: ChatMessage = {
       id: fileId,
       type: "file",
       direction: "sent",
       timestamp: Date.now(),
-      file: { fileId, name: file.name, size: file.size, mimeType: file.type || "application/octet-stream", status: "sending", progress: 0, objectUrl: null }
+      file: { 
+        fileId, 
+        name: file.name, 
+        size: file.size, 
+        mimeType: file.type || "application/octet-stream", 
+        status: "sending", 
+        progress: 0, 
+        objectUrl 
+      }
     };
     this.emit("chat_message", fileMessage);
 
@@ -378,6 +407,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       const chat = this.pc.createDataChannel("chat", { ordered: true });
       const files = this.pc.createDataChannel("files", { ordered: true });
       files.binaryType = "arraybuffer";
+      files.bufferedAmountLowThreshold = 65536;
       const system = this.pc.createDataChannel("system", { ordered: true });
 
       this.setupChannelListeners(chat, "chat");
@@ -387,7 +417,10 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
     this.pc.ondatachannel = (event) => {
       const channel = event.channel;
-      if (channel.label === "files") channel.binaryType = "arraybuffer";
+      if (channel.label === "files") {
+        channel.binaryType = "arraybuffer";
+        channel.bufferedAmountLowThreshold = 65536; // 64KB threshold
+      }
       this.setupChannelListeners(channel, channel.label);
     };
 
@@ -413,9 +446,12 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     if (label === "chat") this.chatChannel = channel;
     if (label === "files") this.fileChannel = channel;
     if (label === "system") this.systemChannel = channel;
+    channel.binaryType = "arraybuffer"; // Ensure binaryType is set for all channels
+    if (label === "files") channel.bufferedAmountLowThreshold = 65536; // Set for files channel
 
     channel.onopen = () => {
       if (label === "chat") this.setStatus("connected");
+      // bufferedAmountLowThreshold is now set directly, no need to set it here
     };
 
     channel.onerror = (err: any) => {
@@ -446,26 +482,65 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       switch (payload.type) {
         case "file_meta":
           this.emit("chat_message", { id: payload.fileId, type: "file", direction: "received", timestamp: Date.now(),
-            file: { fileId: payload.fileId, name: payload.name, size: payload.size, mimeType: payload.mimeType, status: "receiving", progress: 0, objectUrl: null }
+            file: { 
+              fileId: payload.fileId, 
+              name: payload.name, 
+              size: payload.size, 
+              mimeType: payload.mimeType, 
+              status: "receiving", 
+              progress: 0, 
+              objectUrl: null,
+              streamingMode: payload.streamingMode
+            }
           });
-          this.incomingFiles.set(payload.fileId, { meta: payload, chunks: [], received: 0 });
-          this.fileTransferQueue.push(payload.fileId);
+          
+          if (!payload.streamingMode) {
+            // Small file: Accept automatically
+            this.incomingFiles.set(payload.fileId, { meta: payload, chunks: [], received: 0 });
+            this.fileTransferQueue.push(payload.fileId);
+            this.sendSystemMessage({ type: "stream_ready", fileId: payload.fileId });
+          } else {
+            // Large file: UI will call acceptLargeFileStream after user picks a location
+            this.incomingFiles.set(payload.fileId, { meta: payload, chunks: [], received: 0 });
+            this.fileTransferQueue.push(payload.fileId);
+          }
           break;
         case "typing_start": this.emit("typing_state", true); break;
         case "typing_stop": this.emit("typing_state", false); break;
         case "bye": this.setStatus("left"); this.emit("typing_state", false); break;
+        case "stream_ready":
+          const resolve = this.pendingStreamApprovals.get(payload.fileId);
+          if (resolve) {
+            resolve(true);
+            this.pendingStreamApprovals.delete(payload.fileId);
+          }
+          break;
       }
     } catch { console.error("Failed to parse system message"); }
   }
 
-  private handleFileMessage(event: MessageEvent) {
+  private async handleFileMessage(event: MessageEvent) {
     if (!(event.data instanceof ArrayBuffer)) return;
     const activeFileId = this.fileTransferQueue[0];
     if (!activeFileId) return;
     const transfer = this.incomingFiles.get(activeFileId);
     if (!transfer) return;
 
-    transfer.chunks.push(event.data);
+    const stream = this.activeFileStreams.get(activeFileId);
+
+    if (stream) {
+      // Disk Streaming Mode
+      try {
+        await (stream as any).write(event.data);
+      } catch (err) {
+        console.error("[WebRTC] Disk write failed:", err);
+        this.emit("file_error", activeFileId, "Disk write failed");
+      }
+    } else {
+      // RAM Accumulation Mode
+      transfer.chunks.push(event.data);
+    }
+
     transfer.received += 1;
     const progress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
 
@@ -474,65 +549,148 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     }
 
     if (transfer.received === transfer.meta.totalChunks) {
-      try {
-        const blob = new Blob(transfer.chunks, { type: transfer.meta.mimeType });
-        const objectUrl = URL.createObjectURL(blob);
-        this.emit("file_complete", activeFileId, objectUrl);
-      } catch (err) {
-        this.emit("file_error", activeFileId, "Assembly failed");
+      console.log(`[WebRTC] Receiver complete: ${activeFileId}`);
+      if (stream) {
+        try {
+          await (stream as any).close();
+          this.activeFileStreams.delete(activeFileId);
+          this.emit("file_complete", activeFileId, ""); // No URL for disk files
+        } catch {}
+      } else {
+        try {
+          const blob = new Blob(transfer.chunks, { type: transfer.meta.mimeType });
+          const objectUrl = URL.createObjectURL(blob);
+          this.emit("file_complete", activeFileId, objectUrl);
+        } catch (err) {
+          this.emit("file_error", activeFileId, "Assembly failed");
+        }
       }
       this.incomingFiles.delete(activeFileId);
       this.fileTransferQueue.shift();
     }
   }
 
+
   private async processSenderQueue() {
     if (this.isProcessingQueue || this.senderFileQueue.length === 0) return;
     this.isProcessingQueue = true;
+    console.log("[WebRTC] Starting sender queue processing.");
 
     while (this.senderFileQueue.length > 0) {
       const task = this.senderFileQueue[0];
       if (!task) break;
+      console.log(`[WebRTC] Processing file: ${task.file.name} (${task.fileId})`);
 
       const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
-      const meta: FileMetaPayload = { type: "file_meta", fileId: task.fileId, name: task.file.name, size: task.file.size, mimeType: task.file.type || "application/octet-stream", totalChunks };
+      const streamingMode = task.file.size >= 500 * 1024 * 1024; // 500MB Threshold
+
+      const meta: FileMetaPayload = { 
+        type: "file_meta", 
+        fileId: task.fileId, 
+        name: task.file.name, 
+        size: task.file.size, 
+        mimeType: task.file.type || "application/octet-stream", 
+        totalChunks,
+        streamingMode
+      };
       
       if (!this.systemChannel || this.systemChannel.readyState !== "open") {
+        console.error(`[WebRTC] System channel not open for ${task.fileId}. State: ${this.systemChannel?.readyState}`);
         this.emit("file_error", task.fileId, "Channel closed");
         this.senderFileQueue.shift();
         continue;
       }
       this.systemChannel.send(JSON.stringify(meta));
+      console.log(`[WebRTC] Sent file meta for ${task.fileId}.`);
 
-      const arrayBuffer = await task.file.arrayBuffer();
-      let offset = 0, chunkIndex = 0;
+      // Wait for Receiver to say "Ready"
+      console.log(`[WebRTC] Waiting for stream_ready for ${task.fileId}...`);
+      const isReady = await new Promise<boolean>((resolve) => {
+        this.pendingStreamApprovals.set(task.fileId, resolve);
+        // Timeout if no response in 60s
+        setTimeout(() => { 
+          if (this.pendingStreamApprovals.has(task.fileId)) {
+            console.warn(`[WebRTC] Stream ready timeout for ${task.fileId}.`);
+            resolve(false); 
+          }
+        }, 60000);
+      });
 
-      while (offset < arrayBuffer.byteLength) {
-        if (!this.fileChannel || this.fileChannel.readyState !== "open") {
-          this.emit("file_error", task.fileId, "Channel closed during transfer");
-          break;
-        }
-
-        if (this.fileChannel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
-          await new Promise<void>((resolve) => {
-            const check = () => (this.fileChannel && this.fileChannel.bufferedAmount <= MAX_BUFFERED_AMOUNT) ? resolve() : setTimeout(check, 50);
-            check();
-          });
-        }
-
-        const end = Math.min(offset + CHUNK_SIZE, arrayBuffer.byteLength);
-        try { this.fileChannel.send(arrayBuffer.slice(offset, end)); } 
-        catch { this.emit("file_error", task.fileId, "Send failed"); break; }
-
-        offset += CHUNK_SIZE;
-        chunkIndex += 1;
-        this.emit("file_progress", task.fileId, Math.round((chunkIndex / totalChunks) * 100));
+      if (!isReady) {
+        this.emit("file_error", task.fileId, "Receiver declined or timed out");
+        this.senderFileQueue.shift();
+        continue;
       }
 
+      console.log(`[WebRTC] Starting stream for ${task.fileId}`);
+      const reader = task.file.stream().getReader();
       try {
-        const objectUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: task.file.type }));
-        this.emit("file_complete", task.fileId, objectUrl);
-      } catch {}
+        let totalSentChunks = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          let offset = 0;
+          while (offset < value.byteLength) {
+            if (!this.fileChannel || this.fileChannel.readyState !== "open") {
+              console.error(`[WebRTC] File channel not open during transfer for ${task.fileId}. State: ${this.fileChannel?.readyState}`);
+              this.emit("file_error", task.fileId, "Channel closed during transfer");
+              return;
+            }
+
+            // Robust Flow Control
+            if (this.fileChannel.bufferedAmount > this.fileChannel.bufferedAmountLowThreshold) {
+              console.log(`[WebRTC] Buffered amount high for ${task.fileId}. Waiting...`);
+              await new Promise<void>((resolve) => {
+                const onLow = () => {
+                  this.fileChannel?.removeEventListener("bufferedamountlow", onLow);
+                  resolve();
+                };
+                this.fileChannel?.addEventListener("bufferedamountlow", onLow);
+                setTimeout(onLow, 200); // 200ms fallback
+              });
+              console.log(`[WebRTC] Buffered amount low for ${task.fileId}. Resuming.`);
+            }
+
+            const end = Math.min(offset + CHUNK_SIZE, value.byteLength);
+            // Use subarray for zero-copy slicing, most browsers support sending it directly
+            const subChunk = value.subarray(offset, end);
+            
+            try {
+              // Create a fresh copy to ensure no shared-buffer issues or oversized native sends
+              const finalData = new Uint8Array(subChunk);
+              this.fileChannel.send(finalData);
+              
+              totalSentChunks++;
+              offset += CHUNK_SIZE;
+
+              // Progress update
+              if (totalSentChunks % 25 === 0 || totalSentChunks >= totalChunks) {
+                this.emit("file_progress", task.fileId, Math.min(100, Math.round((totalSentChunks / totalChunks) * 100)));
+              }
+
+              // Yield to event loop to prevent "Failure to send data" (SCTP congestion)
+              if (totalSentChunks % 5 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 5)); // Slightly longer delay
+              }
+            } catch (err) {
+              console.error("[WebRTC] Native send failure:", err);
+              this.emit("file_error", task.fileId, "Send failed");
+              return;
+            }
+          }
+        }
+
+        // We don't have a Blob URL for our own sent file in streaming mode 
+        // because we never held it all in memory.
+        this.emit("file_complete", task.fileId, ""); 
+        console.log(`[WebRTC] Stream complete: ${task.fileId}`);
+      } catch (err) {
+        console.error("[WebRTC] Stream error:", err);
+        this.emit("file_error", task.fileId, "Streaming error");
+      } finally {
+        reader.releaseLock();
+      }
 
       this.senderFileQueue.shift();
     }
@@ -548,6 +706,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.fileTransferQueue = [];
     this.senderFileQueue = [];
     this.isProcessingQueue = false;
+    this.pendingStreamApprovals.clear();
+    this.activeFileStreams.clear();
     
     this.setStatus("idle");
     this.incomingRequest = null;

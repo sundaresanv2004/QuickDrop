@@ -14,7 +14,7 @@ import {
 
 interface MessageInputProps {
   onSendMessage: (content: string) => void
-  onFileSelect: (file: File) => void
+  onFilesSelect: (files: File[]) => void
   onTypingStart: () => void
   onTypingStop: () => void
   disabled: boolean
@@ -22,7 +22,7 @@ interface MessageInputProps {
 
 export default function MessageInput({ 
   onSendMessage, 
-  onFileSelect, 
+  onFilesSelect, 
   onTypingStart,
   onTypingStop,
   disabled 
@@ -106,11 +106,12 @@ export default function MessageInput({
         type="file"
         ref={fileInputRef}
         accept="*/*"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) {
-            onFileSelect(file)
+          const files = Array.from(e.target.files || [])
+          if (files.length > 0) {
+            onFilesSelect(files)
             e.target.value = ""
           }
         }}
@@ -119,11 +120,12 @@ export default function MessageInput({
         type="file"
         ref={mediaInputRef}
         accept="image/*,video/*"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) {
-            onFileSelect(file)
+          const files = Array.from(e.target.files || [])
+          if (files.length > 0) {
+            onFilesSelect(files)
             e.target.value = ""
           }
         }}

@@ -115,17 +115,11 @@ export default function ChatPage() {
     sendChatMessage(content)
   }
 
-  const MAX_FILE_SIZE = 500 * 1024 * 1024   // 500MB limit
-
-  const handleFileSelect = (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
-      alert(`File too large. Maximum size is 500MB.\nSelected: ${
-        (file.size / 1024 / 1024).toFixed(1)
-      }MB`)
-      return
-    }
-    sendFile(file).catch(err => {
-      console.error("[FILES] Send failed:", err)
+  const handleFilesSelect = (files: File[]) => {
+    files.forEach(file => {
+      sendFile(file).catch(err => {
+        console.error(`[FILES] Send failed for ${file.name}:`, err)
+      })
     })
   }
 
@@ -155,7 +149,7 @@ export default function ChatPage() {
 
       <MessageInput
         onSendMessage={handleSendMessage}
-        onFileSelect={handleFileSelect}
+        onFilesSelect={handleFilesSelect}
         onTypingStart={handleTypingStart}
         onTypingStop={handleTypingStop}
         disabled={!isChannelOpen}

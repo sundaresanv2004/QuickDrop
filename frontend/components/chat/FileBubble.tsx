@@ -13,6 +13,8 @@ import {
   Loading03Icon,
   AlertCircleIcon,
   SmileIcon,
+  Tick01Icon,
+  TickDouble01Icon,
 } from "@hugeicons/core-free-icons"
 import FileProgressBar from "./FileProgressBar"
 import { useWebRTC } from "@/context/WebRTCContext"
@@ -58,6 +60,29 @@ export default function FileBubble({ message }: FileBubbleProps) {
     setShowPicker(false)
   }
 
+  const handleAcceptStream = async () => {
+    // @ts-ignore
+    if (!file.streamingMode || !window.showSaveFilePicker) {
+      alert("Disk streaming is not supported on this browser or file.")
+      return
+    }
+
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({ suggestedName: file.name })
+      const writable = await handle.createWritable()
+      // @ts-ignore
+      const { webRTCManager } = await import("@/lib/webrtc/WebRTCManager")
+      webRTCManager.acceptLargeFileStream(file.fileId, writable)
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        console.log("[FILES] User cancelled file picker")
+      } else {
+        console.error("[FILES] Stream setup failed:", err)
+      }
+    }
+  }
+
   const reactions = message.reactions || {}
   const emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 
@@ -89,77 +114,46 @@ export default function FileBubble({ message }: FileBubbleProps) {
     </Popover>
   )
 
+  const images = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]
+  const isImage = images.includes(file.mimeType)
+
   return (
-    <div
-      className={cn(
-        "flex w-full mb-1 group/msg relative",
-        isSent ? "justify-end" : "justify-start"
-      )}
-    >
-      <div className={cn(
-        "flex flex-col max-w-[88%] sm:max-w-[75%]",
-        isSent ? "items-end" : "items-start"
-      )}>
+    <div className={cn("flex w-full mb-1 group/msg relative", isSent ? "justify-end" : "justify-start")}>
+      <div className={cn("flex flex-col max-w-[80%] sm:max-w-[65%]", isSent ? "items-end" : "items-start")}>
         <div className="flex items-center gap-1 w-full">
           {isSent && <EmojiPicker align="end" />}
-
           <div
             className={cn(
-              "rounded-2xl px-3 py-2.5 min-w-[200px] space-y-2 select-none transition-transform",
-              isSent
-                ? "bg-primary text-primary-foreground rounded-br-sm"
-                : "bg-muted text-foreground rounded-bl-sm"
+              "rounded-xl px-2.5 py-2 min-w-[180px] space-y-1.5 select-none transition-transform shadow-sm",
+              isSent ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"
             )}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setShowPicker(true)
-            }}
+            onContextMenu={(e) => { e.preventDefault(); setShowPicker(true) }}
           >
-            {/* ── Section A: Image Preview ── */}
-            {file.mimeType.startsWith("image/") && file.status === "complete" && file.objectUrl && (
-              <div className="rounded-lg overflow-hidden max-h-40 sm:max-h-48">
+            {/* Image Preview - show if we have an objectUrl at any stage */}
+            {isImage && file.objectUrl && (
+              <div className="rounded-lg overflow-hidden max-h-36 sm:max-h-44 border border-black/5 bg-black/5">
                 <img
                   src={file.objectUrl}
                   alt={file.name}
-                  className="w-full h-full object-cover cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation() 
-                    window.open(file.objectUrl!, "_blank")
-                  }}
+                  className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); window.open(file.objectUrl!, "_blank") }}
                 />
               </div>
             )}
-            {file.mimeType.startsWith("image/") && file.status === "receiving" && (
-              <div className="rounded-lg bg-black/10 h-32 flex items-center justify-center">
-                <HugeiconsIcon icon={Image01Icon} size={32} color="currentColor" className="opacity-40" />
+            {!isSent && isImage && !file.objectUrl && file.status === "receiving" && (
+              <div className="rounded-lg bg-black/10 h-28 flex items-center justify-center">
+                <HugeiconsIcon icon={Image01Icon} size={24} color="currentColor" className="opacity-40" />
               </div>
             )}
 
-            {/* ── Section B: File Info Row ── */}
-            <div className="flex items-center gap-2.5">
-              <div
-                className={cn(
-                  "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0",
-                  isSent ? "bg-primary-foreground/15" : "bg-background/50"
-                )}
-              >
-                <HugeiconsIcon
-                  icon={getFileIconForMime(file.mimeType)}
-                  size={20}
-                  color="currentColor"
-                />
+            <div className="flex items-center gap-2">
+              <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", isSent ? "bg-primary-foreground/15" : "bg-background/50")}>
+                <HugeiconsIcon icon={getFileIconForMime(file.mimeType)} size={18} color="currentColor" />
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate leading-tight">
-                  {file.name}
-                </p>
-                <p
-                  className={cn(
-                    "text-[11px] mt-0.5",
-                    isSent ? "text-primary-foreground/70" : "text-muted-foreground"
-                  )}
-                >
+                <p className="text-[13px] font-semibold truncate leading-tight">{file.name}</p>
+                <p className={cn("text-[10px] mt-0.5", isSent ? "text-primary-foreground/70" : "text-muted-foreground")}>
                   {formatFileSize(file.size)}
                   {file.status === "sending" && ` · ${file.progress}%`}
                   {file.status === "receiving" && file.progress > 0 && ` · ${file.progress}%`}
@@ -167,53 +161,57 @@ export default function FileBubble({ message }: FileBubbleProps) {
               </div>
 
               {(file.status === "sending" || file.status === "receiving") && (
-                <HugeiconsIcon
-                  icon={Loading03Icon}
-                  size={18}
-                  color="currentColor"
-                  className="animate-spin opacity-70 flex-shrink-0"
-                />
+                <div className="flex items-center gap-1.5">
+                  {!isSent && file.status === "receiving" && file.streamingMode && file.progress === 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAcceptStream() }}
+                      className="px-2.5 py-1 rounded-md bg-foreground text-background text-[11px] font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-1 shadow-lg border border-background/20"
+                    >
+                      <HugeiconsIcon icon={Download01Icon} size={14} />
+                      ACCEPT & SAVE
+                    </button>
+                  )}
+                  <HugeiconsIcon icon={Loading03Icon} size={16} color="currentColor" className="animate-spin opacity-70" />
+                </div>
               )}
               {file.status === "complete" && (
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDownload()
-                  }}
-                  className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center",
-                    "transition-opacity hover:opacity-70 flex-shrink-0",
-                    isSent ? "bg-primary-foreground/15" : "bg-background/50"
-                  )}
+                  onClick={(e) => { e.stopPropagation(); handleDownload() }}
+                  className={cn("w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-black/10", isSent ? "bg-primary-foreground/15" : "bg-background/50")}
                   title="Download"
                 >
-                  <HugeiconsIcon icon={Download01Icon} size={16} color="currentColor" />
+                  <HugeiconsIcon icon={Download01Icon} size={14} color="currentColor" />
                 </button>
               )}
             </div>
 
             {(file.status === "sending" || file.status === "receiving") && (
-              <FileProgressBar
-                progress={file.progress}
-                className={isSent ? "[&>div]:bg-primary-foreground" : ""}
-              />
+              <FileProgressBar progress={file.progress} className={cn("h-1", isSent ? "[&>div]:bg-primary-foreground" : "")} />
             )}
 
-            <div className={cn("flex items-center gap-2", isSent ? "justify-end" : "justify-between flex-row-reverse")}>
-              {!isSent && (
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                  {file.status === "sending"   && "Sending..."}
-                  {file.status === "receiving" && "Receiving..."}
-                  {file.status === "complete"  && "Tap to download"}
-                  {file.status === "error"     && "Transfer failed"}
-                </span>
-              )}
-              <span
-                className={cn(
-                  "text-[10px] opacity-70 whitespace-nowrap",
-                  isSent ? "text-primary-foreground" : "text-muted-foreground"
+            <div className={cn("flex items-center gap-2 mt-1", isSent ? "justify-end" : "justify-between flex-row-reverse")}>
+              <div className="flex items-center gap-1.5 opacity-70">
+                {file.status === "sending" && (
+                  <span className="text-[9px] font-bold uppercase tracking-tight">Sending...</span>
                 )}
-              >
+                {file.status === "receiving" && (
+                  <>
+                    <HugeiconsIcon icon={Loading03Icon} size={10} className="animate-spin" />
+                    <span className="text-[9px] font-bold uppercase tracking-tight">
+                      {file.streamingMode && file.progress === 0 ? "Awaiting Approve" : "Receiving..."}
+                    </span>
+                  </>
+                )}
+                {file.status === "complete" && (
+                  <span className={cn("text-[9px] font-bold uppercase tracking-tight", isSent ? "text-blue-200" : "text-green-500")}>
+                    {file.streamingMode ? "Disk Saved" : "Ready"}
+                  </span>
+                )}
+                {file.status === "error" && (
+                  <span className="text-[9px] font-bold uppercase tracking-tight text-destructive">Error</span>
+                )}
+              </div>
+              <span className={cn("text-[9px] font-medium opacity-60", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
                 {formatTimestamp(message.timestamp)}
               </span>
             </div>

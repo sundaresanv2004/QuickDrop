@@ -16,6 +16,7 @@ export interface FileInfo {
   status:    FileStatus
   progress:  number          // 0–100
   objectUrl: string | null   // set only when status === "complete"
+  streamingMode?: boolean    // true if >= 500MB, used for disk streaming prompts
 }
 
 // ─── Single chat message (text or file) ───
@@ -64,6 +65,12 @@ export interface FileMetaPayload {
   size:        number
   mimeType:    string
   totalChunks: number
+  streamingMode: boolean      // true if >= 500MB
+}
+
+export interface StreamReadyPayload {
+  type: "stream_ready"
+  fileId: string
 }
 
 export interface TypingPayload {
@@ -77,6 +84,7 @@ export interface ByePayload {
 // Union of all system channel payloads
 export type SystemPayload =
   | FileMetaPayload
+  | StreamReadyPayload
   | TypingPayload
   | ByePayload
 

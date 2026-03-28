@@ -111,8 +111,8 @@ export default function ChatPage() {
     router.replace("/")
   }
 
-  const handleSendMessage = (content: string) => {
-    sendChatMessage(content)
+  const handleSendMessage = (content: string, preview?: any) => {
+    sendChatMessage(content, preview)
   }
 
   const handleFilesSelect = (files: File[]) => {

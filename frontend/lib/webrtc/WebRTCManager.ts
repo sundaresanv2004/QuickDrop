@@ -1,6 +1,6 @@
 import { EventEmitter } from './EventEmitter';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
-import { ChatMessage, SystemPayload, TextMessagePayload, ReactionMessagePayload, FileMetaPayload, ChatPayload } from '@/types/chat';
+import { ChatMessage, SystemPayload, TextMessagePayload, ReactionMessagePayload, FileMetaPayload, ChatPayload, LinkPreview } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
 import { IndexedDBManager } from './IndexedDBManager';
 
@@ -212,17 +212,17 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.targetPeerId = null;
   }
 
-  public sendChatMessage(content: string) {
+  public sendChatMessage(content: string, linkPreview?: LinkPreview) {
     if (!this.chatChannel || this.chatChannel.readyState !== "open") return null;
 
     const id = crypto.randomUUID();
     const timestamp = Date.now();
-    const payload: TextMessagePayload = { type: "text_message", id, content, timestamp };
+    const payload: TextMessagePayload = { type: "text_message", id, content, timestamp, linkPreview };
     
     this.chatChannel.send(JSON.stringify(payload));
     
     // Return early local version
-    const msg: ChatMessage = { id, type: "text", direction: "sent", content, timestamp };
+    const msg: ChatMessage = { id, type: "text", direction: "sent", content, timestamp, linkPreview };
     this.emit("chat_message", msg);
     return msg;
   }
@@ -515,7 +515,14 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         try {
           const payload: ChatPayload = JSON.parse(event.data);
           if (payload.type === "text_message") {
-            this.emit("chat_message", { id: payload.id, type: "text", direction: "received", content: payload.content, timestamp: payload.timestamp });
+            this.emit("chat_message", { 
+              id: payload.id, 
+              type: "text", 
+              direction: "received", 
+              content: payload.content, 
+              timestamp: payload.timestamp,
+              linkPreview: payload.linkPreview 
+            });
           } else if (payload.type === "reaction_message") {
             this.emit("reaction", payload.messageId, payload.emoji, payload.fromId);
           }
@@ -664,11 +671,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       
       const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
       
-      // DEVICE-AWARE: Only use streaming if file is large AND browser supports it
-      const streamingMode = 
-        task.file.size >= 500 * 1024 * 1024 && 
-        typeof window !== 'undefined' && 
-        !!(window as any).showSaveFilePicker;
+      // Any file >= 500MB is considered "large" and requires manual approval/streaming
+      const streamingMode = task.file.size >= 500 * 1024 * 1024;
 
       const meta: FileMetaPayload = { 
         type: "file_meta", 
@@ -819,10 +823,18 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     if (!meta) return;
 
     try {
-      // @ts-ignore
-      const handle = await window.showSaveFilePicker({ suggestedName: meta.name });
-      const writable = await (handle as any).createWritable();
-      this.activeFileStreams.set(fileId, writable);
+      // @ts-ignore - FALLBACK: If browser doesn't support streaming, we use IndexedDB storage
+      const hasPicker = typeof window !== 'undefined' && !!window.showSaveFilePicker;
+      
+      if (hasPicker) {
+        // @ts-ignore
+        const handle = await window.showSaveFilePicker({ suggestedName: meta.name });
+        const writable = await (handle as any).createWritable();
+        this.activeFileStreams.set(fileId, writable);
+        console.log(`[WebRTC] Streaming supported, using file picker: ${fileId}`);
+      } else {
+        console.log(`[WebRTC] Streaming not supported, falling back to IndexedDB: ${fileId}`);
+      }
       
       // Now move from pending to active
       this.incomingFiles.set(fileId, { meta, receivedBytes: 0, completedBytes: 0, chunkBuffer: [] });
@@ -831,15 +843,16 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
       this.sendSystemMessage({ type: "stream_ready", fileId });
       this.emit("file_progress", fileId, 1); // Trigger immediate UI update to hide 'Accept'
-      console.log(`[WebRTC] Large file accepted and stream ready: ${fileId}`);
+      console.log(`[WebRTC] Large file accepted and ready: ${fileId}`);
     } catch (err) {
-      console.error("[WebRTC] Failed to initialize file stream:", err);
+      console.error("[WebRTC] Failed to initialize file transfer:", err);
     }
   }
 
   public rejectFile(fileId: string) {
     this.pendingLargeFiles.delete(fileId);
     this.sendSystemMessage({ type: "file_rejected", fileId });
+    this.emit("file_error", fileId, "Rejected by you");
   }
 }
 

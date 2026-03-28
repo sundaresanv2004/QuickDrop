@@ -12,8 +12,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+import { LinkPreview } from "@/types/chat"
+
 interface MessageInputProps {
-  onSendMessage: (content: string) => void
+  onSendMessage: (content: string, preview?: LinkPreview) => void
   onFilesSelect: (files: File[]) => void
   onTypingStart: () => void
   onTypingStop: () => void
@@ -28,10 +30,14 @@ export default function MessageInput({
   disabled 
 }: MessageInputProps) {
   const [value, setValue] = useState("")
+  const [preview, setPreview] = useState<LinkPreview | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const fetchedUrls = useRef<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaInputRef = useRef<HTMLInputElement>(null)
   const isTypingRef = useRef<boolean>(false)
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
@@ -54,8 +60,16 @@ export default function MessageInput({
       onTypingStop()
     }
 
-    onSendMessage(value.trim())
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current)
+      previewTimerRef.current = null
+    }
+
+    onSendMessage(value.trim(), preview || undefined)
     setValue("")
+    setPreview(null)
+    setLoadingPreview(false)
+    fetchedUrls.current.clear()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -138,6 +152,50 @@ export default function MessageInput({
           const newValue = e.target.value
           setValue(newValue)
 
+          // URL Detection Logic
+          const urlRegex = /(https?:\/\/[^\s]+)/g
+          const match = newValue.match(urlRegex)
+          
+          if (match && match[0]) {
+            const url = match[0]
+            if (!fetchedUrls.current.has(url)) {
+              if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
+              
+              previewTimerRef.current = setTimeout(async () => {
+                setLoadingPreview(true)
+                try {
+                  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
+                  const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
+                  
+                  // Verification Check: Has the URL been removed while fetching?
+                  if (res.ok) {
+                    const data = await res.json()
+                    
+                    // Check again if the URL is still in the input
+                    const currentText = (document.getElementById("message-input-area") as HTMLTextAreaElement)?.value || ""
+                    if (currentText.includes(url)) {
+                      setPreview(data)
+                      fetchedUrls.current.add(url)
+                    } else {
+                      console.log("[LinkPreview] Input changed, discarding preview.")
+                    }
+                  } else {
+                    console.error(`[LinkPreview] Backend returned ${res.status}: ${res.statusText}`)
+                  }
+                } catch (err) {
+                  console.error("[LinkPreview] Failed to fetch preview:", err)
+                } finally {
+                  setLoadingPreview(false)
+                }
+              }, 1000)
+            }
+          } else {
+            if (preview) {
+              setPreview(null)
+              fetchedUrls.current.clear()
+            }
+          }
+
           // Edge case 1: field is empty or only whitespace
           if (!newValue.trim()) {
             if (isTypingRef.current) {
@@ -170,10 +228,37 @@ export default function MessageInput({
         onKeyDown={handleKeyDown}
         disabled={disabled}
         rows={1}
+        id="message-input-area"
         className="resize-none min-h-[40px] max-h-[120px] flex-1 text-base sm:text-sm"
         inputMode="text"
         enterKeyHint="send"
       />
+
+      {preview && (
+        <div className="absolute bottom-full left-0 right-0 p-3 bg-background/80 backdrop-blur-md border-t border-x rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground opacity-70">Link Preview Rendering...</span>
+            <button 
+              onClick={() => {
+                setPreview(null)
+                // We don't clear fetchedUrls so it doesn't immediately re-fetch the same link
+              }}
+              className="text-muted-foreground hover:text-foreground text-xs font-bold bg-muted/50 px-2 py-0.5 rounded-full transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="flex gap-3 min-w-0">
+            {preview.image && (
+              <img src={preview.image} alt="" className="w-16 h-16 rounded-xl object-cover border border-border/50 shadow-sm" />
+            )}
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <h4 className="text-xs font-bold truncate text-foreground/90">{preview.title || "No Title"}</h4>
+              <p className="text-[10px] text-muted-foreground line-clamp-2 leading-tight">{preview.description || "No description available."}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Button
         variant="default"

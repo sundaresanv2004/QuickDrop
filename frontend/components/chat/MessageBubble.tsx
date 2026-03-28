@@ -1,7 +1,9 @@
-import { ChatMessage } from "@/types/chat"
+import { ChatMessage, LinkPreview } from "@/types/chat"
+import LinkEmbed from "./LinkEmbed"
 import { cn, formatTimestamp } from "@/lib/utils"
 import { useWebRTC } from "@/context/WebRTCContext"
-import { useState } from "react"
+import { useWebRTCBridge } from "@/hooks/useWebRTCBridge"
+import { useState, useEffect } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { SmileIcon, TickDouble01Icon } from "@hugeicons/core-free-icons"
 import {
@@ -60,10 +62,68 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
     </Popover>
   )
 
+  const { updateMessage } = useWebRTCBridge()
+
+  // Retroactive link preview fetch
+  useEffect(() => {
+    if (message.type !== "text" || message.linkPreview || !message.content) return
+
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+    const match = message.content.match(urlRegex)
+    if (match && match[0]) {
+      const url = match[0]
+      const fetchPreview = async () => {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
+          const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data && (data.title || data.image)) {
+              updateMessage(message.id, { linkPreview: data })
+            }
+          }
+        } catch (err) {
+          console.error("[LinkPreview] Retroactive fetch failed:", err)
+        }
+      }
+      fetchPreview()
+    }
+  }, [message.id, message.content, message.linkPreview, message.type, updateMessage])
+
+  const LinkifiedText = ({ text }: { text: string }) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+    const parts = text.split(urlRegex)
+    
+    return (
+      <>
+        {parts.map((part, i) => {
+          if (part.match(urlRegex)) {
+            return (
+              <a
+                key={i}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "underline underline-offset-4 font-semibold transition-opacity hover:opacity-70 break-all",
+                  isSent ? "text-primary-foreground" : "text-primary"
+                )}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {part}
+              </a>
+            )
+          }
+          return <span key={i}>{part}</span>
+        })}
+      </>
+    )
+  }
+
   return (
     <div
       className={cn(
-        "flex w-full mb-1 group/msg relative",
+        "flex w-full mb-1 group/msg relative animate-in fade-in slide-in-from-bottom-1 duration-300",
         isSent ? "justify-end" : "justify-start"
       )}
     >
@@ -77,7 +137,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
           
           <div
             className={cn(
-              "px-3 py-2 flex flex-col gap-0.5 select-none transition-transform flex-1 min-w-0",
+              "px-3 py-2 flex flex-col gap-0.5 select-none transition-transform flex-1 min-w-0 shadow-sm",
               isSent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
               isSent
                 ? cn("rounded-2xl", isLastInGroup ? "rounded-br-sm" : "")
@@ -88,8 +148,9 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
               setShowPicker(true)
             }}
           >
-            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
-              {message.content}
+            {message.linkPreview && <LinkEmbed preview={message.linkPreview} isSent={isSent} />}
+            <p className="text-sm border-none leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
+              <LinkifiedText text={message.content || ""} />
             </p>
             <div className={cn("flex items-center gap-1 mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
               <span className={cn("text-[9px] select-none whitespace-nowrap font-medium", isSent ? "text-primary-foreground" : "text-muted-foreground")}>

@@ -8,7 +8,7 @@ const nextConfig = {
                 headers: [
                     {
                         key: "Content-Security-Policy",
-                        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws: wss: https://api-quickdrop.sundaresan.dev http://localhost:8001; frame-ancestors 'none'; object-src 'none';"
+                        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; font-src 'self'; connect-src 'self' ws: wss: https://api-quickdrop.sundaresan.dev http://localhost:8001; frame-ancestors 'none'; object-src 'none';"
                     },
                     {
                         key: "X-Frame-Options",

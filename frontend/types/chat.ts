@@ -20,6 +20,13 @@ export interface FileInfo {
   statusReason?: string      // e.g. "Declined" or "Network Error"
 }
 
+export interface LinkPreview {
+  url: string
+  title?: string
+  description?: string
+  image?: string
+}
+
 // ─── Single chat message (text or file) ───
 export interface ChatMessage {
   id:        string           // UUID, generated at send time
@@ -35,6 +42,9 @@ export interface ChatMessage {
 
   // Emoji Reactions: { "👍": ["device-id-1", "device-id-2"], ... }
   reactions?: Record<string, string[]>
+
+  // Link Preview (WhatsApp style)
+  linkPreview?: LinkPreview
 }
 
 // ─── In-progress file being received (stored separately, not in messages) ───
@@ -57,6 +67,7 @@ export interface TextMessagePayload {
   id:        string
   content:   string
   timestamp: number
+  linkPreview?: LinkPreview
 }
 
 export interface FileMetaPayload {

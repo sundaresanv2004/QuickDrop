@@ -144,9 +144,12 @@ export function useWebRTCBridge() {
     setActiveChatPeerId: (id: string | null) => webRTCManager.setActiveChatPeerId(id),
     resetConnection: (id?: string) => webRTCManager.resetConnection(id),
 
-    sendChatMessage: (text: string) => webRTCManager.sendChatMessage(text),
+    updateMessage: (id: string, updates: Partial<ChatMessage>) => {
+      setMessages(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m))
+    },
+    sendChatMessage: (text: string, preview?: any) => webRTCManager.sendChatMessage(text, preview),
     sendReaction: (msgId: string, emoji: string) => webRTCManager.sendReaction(msgId, emoji),
-    sendSystemMessage: (payload: SystemPayload) => webRTCManager.sendSystemMessage(payload),
+    sendSystemMessage: (payload: any) => webRTCManager.sendSystemMessage(payload),
     sendFile: (f: File) => webRTCManager.sendFile(f),
     
     // For chat input to know if channel open

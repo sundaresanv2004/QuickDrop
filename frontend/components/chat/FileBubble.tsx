@@ -102,7 +102,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
   }
 
   const reactions = message.reactions || {}
-  const emojis = ["👍", "❤️", "😂", "😅", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯", "🎉", "🙏"]
+  const emojis = ["👍", "❤️", "😂", "😅", "🙏", "🎉", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯"]
 
   const EmojiPicker = ({ align }: { align: "start" | "end" }) => (
     <Popover open={showPicker} onOpenChange={setShowPicker}>
@@ -114,9 +114,9 @@ export default function FileBubble({ message }: FileBubbleProps) {
       <PopoverContent 
         side="top" 
         align={align} 
-        className="w-[230px] p-1.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
+        className="w-[230px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
       >
-        <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+        <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
           {emojis.map(emoji => (
             <button
               key={emoji}
@@ -153,10 +153,10 @@ export default function FileBubble({ message }: FileBubbleProps) {
                 <div 
                   className={cn(
                     "flex items-center gap-2",
-                    !isSent && file.status === "complete" ? "cursor-pointer" : ""
+                    !isSent && file.status === "complete" && !file.streamingMode ? "cursor-pointer" : ""
                   )}
                   onClick={(e) => {
-                    if (!isSent && file.status === "complete") {
+                    if (!isSent && file.status === "complete" && !file.streamingMode) {
                       e.stopPropagation();
                       handleDownload();
                     }
@@ -180,7 +180,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                       <HugeiconsIcon icon={Loading03Icon} size={15} color="currentColor" className="animate-spin opacity-60" />
                     </div>
                   )}
-                  {file.status === "complete" && (
+                  {file.status === "complete" && !file.streamingMode && (
                     <Button
                       onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDownload() }}
                       size="icon"
@@ -233,9 +233,14 @@ export default function FileBubble({ message }: FileBubbleProps) {
                     {formatTimestamp(message.timestamp)}
                   </span>
                   
-                  {!isSent && file.status === "complete" && (
+                  {!isSent && file.status === "complete" && !file.streamingMode && (
                     <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight opacity-70">
                       Ready to Download
+                    </span>
+                  )}
+                  {!isSent && file.status === "complete" && file.streamingMode && (
+                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight opacity-70">
+                      Saved to Disk
                     </span>
                   )}
 
@@ -280,7 +285,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
       </ContextMenuTrigger>
 
       <ContextMenuContent className="w-56 rounded-2xl">
-        {file.status === "complete" && (
+        {file.status === "complete" && !file.streamingMode && (
           <ContextMenuItem 
             onClick={() => handleDownload()}
             className="gap-3"
@@ -295,8 +300,8 @@ export default function FileBubble({ message }: FileBubbleProps) {
             <HugeiconsIcon icon={SmileIcon} size={18} />
             <span>React</span>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="p-1.5 rounded-full w-[230px]">
-            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+          <ContextMenuSubContent className="px-1 py-0.5 rounded-full w-[230px]">
+            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
               {emojis.map(emoji => (
                 <button
                   key={emoji}

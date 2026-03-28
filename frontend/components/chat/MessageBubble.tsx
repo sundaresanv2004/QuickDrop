@@ -37,7 +37,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   const isSent = message.direction === "sent"
   const reactions = message.reactions || {}
 
-  const emojis = ["👍", "❤️", "😂", "😅", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯", "🎉", "🙏"]
+  const emojis = ["👍", "❤️", "😂", "😅", "🙏", "🎉", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯"]
 
   const handleReaction = (emoji: string) => {
     sendReaction(message.id, emoji)
@@ -51,12 +51,12 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
           <HugeiconsIcon icon={SmileIcon} size={16} />
         </button>
       </PopoverTrigger>
-      <PopoverContent 
-        side="top" 
-        align={align} 
-        className="w-[230px] p-1.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
+      <PopoverContent
+        side="top"
+        align={align}
+        className="w-[230px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
       >
-        <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+        <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
           {emojis.map(emoji => (
             <button
               key={emoji}
@@ -203,7 +203,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
       <ContextMenuContent className="w-56 rounded-2xl">
         {message.content?.match(/(https?:\/\/[^\s]+)/) && (
           <>
-            <ContextMenuItem 
+            <ContextMenuItem
               onClick={() => {
                 const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
                 if (url) window.open(url, "_blank")
@@ -214,7 +214,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
               <span>Open Link</span>
             </ContextMenuItem>
 
-            <ContextMenuItem 
+            <ContextMenuItem
               onClick={() => {
                 const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
                 if (url) {
@@ -231,7 +231,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
         )}
 
         {!message.content?.match(/(https?:\/\/[^\s]+)/) && (
-          <ContextMenuItem 
+          <ContextMenuItem
             onClick={() => {
               navigator.clipboard.writeText(message.content || "")
               toast.success("Text copied")
@@ -248,8 +248,8 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
             <HugeiconsIcon icon={SmileIcon} size={18} />
             <span>React</span>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="p-1.5 rounded-full w-[230px]">
-            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+          <ContextMenuSubContent className="px-1 py-0.5 rounded-full w-[230px]">
+            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
               {emojis.map(emoji => (
                 <button
                   key={emoji}

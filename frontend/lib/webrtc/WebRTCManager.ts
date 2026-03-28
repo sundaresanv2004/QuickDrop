@@ -70,10 +70,11 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
   // File Transfer State
   private dbManager = new IndexedDBManager();
+  private pendingLargeFiles: Map<string, FileMetaPayload> = new Map();
   private incomingFiles: Map<string, { 
     meta: FileMetaPayload, 
-    received: number, 
-    completed: number,
+    receivedBytes: number, 
+    completedBytes: number,
     chunkBuffer: { chunkIndex: number, data: ArrayBuffer }[],
     isPaused?: boolean
   }> = new Map();
@@ -193,44 +194,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.cancelSession();
   }
 
-  public async acceptLargeFileStream(fileId: string, writableStream: any) {
-    const transfer = this.incomingFiles.get(fileId);
-    if (!transfer || !transfer.meta.streamingMode) {
-      console.warn(`[WebRTC] Attempted to accept stream for non-streaming or unknown file: ${fileId}`);
-      return;
-    }
-    console.log(`[WebRTC] Accepting large file stream for ${fileId}`);
-    try {
-      // For FileSystemWritableFileStream, we can use it directly or get a writer
-      const writer = writableStream.getWriter ? writableStream.getWriter() : writableStream;
-      this.activeFileStreams.set(fileId, writer);
-      this.sendSystemMessage({ type: "stream_ready", fileId });
-    } catch (err) {
-      console.error("[WebRTC] Failed to initialize stream writer:", err);
-      this.emit("file_error", fileId, "Stream initialization failed");
-    }
-  }
 
-  public resetConnection(sessionIdToCleanup?: string) {
-    if (this.cleanupTimeout) clearTimeout(this.cleanupTimeout);
-
-    // If a specific session ID is provided, it's likely a React unmount cleanup.
-    // We debounce this to handle React 18 Strict Mode remounts.
-    if (sessionIdToCleanup) {
-      console.log("[WebRTC] Scheduling cleanup for session:", sessionIdToCleanup);
-      this.cleanupTimeout = setTimeout(() => {
-        console.log("[WebRTC] Executing delayed cleanup for session:", sessionIdToCleanup);
-        this.cleanupConnection();
-        this.cleanupTimeout = null;
-      }, 1000); // 1 second buffer is very safe for Strict Mode
-      return;
-    }
-
-    // Manual / Immediate cleanup (e.g. clicking "Leave" or "Cancel")
-    console.log("[WebRTC] Immediate connection reset requested");
-    this.cleanupConnection();
-  }
-  
   private cancelSession() {
     this.setStatus("idle");
     this.incomingRequest = null;
@@ -572,13 +536,12 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           
           if (!payload.streamingMode) {
             // Small file: Accept automatically
-            this.incomingFiles.set(payload.fileId, { meta: payload, received: 0, completed: 0, chunkBuffer: [] });
+            this.incomingFiles.set(payload.fileId, { meta: payload, receivedBytes: 0, completedBytes: 0, chunkBuffer: [] });
             this.fileTransferQueue.push(payload.fileId);
             this.sendSystemMessage({ type: "stream_ready", fileId: payload.fileId });
           } else {
-            // Large file: UI will call acceptLargeFileStream after user picks a location
-            this.incomingFiles.set(payload.fileId, { meta: payload, received: 0, completed: 0, chunkBuffer: [] });
-            this.fileTransferQueue.push(payload.fileId);
+            // Large file: Store in pending, WAIT for manual approval
+            this.pendingLargeFiles.set(payload.fileId, payload);
           }
           break;
         case "typing_start": this.emit("typing_state", true); break;
@@ -595,23 +558,10 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           console.warn(`[WebRTC] File was rejected by receiver: ${payload.fileId}`);
           this.emit("file_error", payload.fileId, "Rejected by receiver");
           
-          // CRITICAL: Resolve the pending approval promise so the sender loop can move on
           const resolveReject = this.pendingStreamApprovals.get(payload.fileId);
           if (resolveReject) {
             resolveReject(false);
             this.pendingStreamApprovals.delete(payload.fileId);
-          }
-          break;
-        case "pause_transfer":
-          console.log(`[WebRTC] Receiver requested PAUSE for ${payload.fileId}`);
-          this.remoteTransferPaused = true;
-          break;
-        case "resume_transfer":
-          console.log(`[WebRTC] Receiver requested RESUME for ${payload.fileId}`);
-          this.remoteTransferPaused = false;
-          if (this.pauseResolver) {
-            this.pauseResolver();
-            this.pauseResolver = null;
           }
           break;
       }
@@ -627,51 +577,43 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
     // Capture data immediately
     const data: ArrayBuffer = event.data;
-    const chunkIndex = transfer.received;
-    transfer.received += 1;
-
-    // Accumulate for batching
+    
+    // ACCURATE PROGRESS: Count bytes, not just chunk increments
+    const bytesBefore = transfer.receivedBytes;
+    transfer.receivedBytes += data.byteLength;
+    
+    const chunkIndex = Math.floor(transfer.receivedBytes / CHUNK_SIZE); 
     transfer.chunkBuffer.push({ chunkIndex, data });
 
-    // Emit wire-level progress immediately (smooth UI updates)
-    const wireProgress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
-    this.emit("file_progress", activeFileId, wireProgress);
+    // Emit wire-level progress every 1MB or on completion (smooth UI updates)
+    const currentMB = Math.floor(transfer.receivedBytes / (1024 * 1024));
+    const previousMB = Math.floor(bytesBefore / (1024 * 1024));
+    const isWireComplete = transfer.receivedBytes >= transfer.meta.size;
 
-    // Shift queue immediately when all bytes arrive over the wire
-    const isWireComplete = transfer.received === transfer.meta.totalChunks;
+    if (currentMB > previousMB || isWireComplete) {
+      const wireProgress = Math.min(100, Math.round((transfer.receivedBytes / transfer.meta.size) * 100));
+      this.emit("file_progress", activeFileId, wireProgress);
+    }
+
     if (isWireComplete) {
       this.fileTransferQueue.shift();
     }
 
-    // Backpressure: Threshold increased to 100 chunks for high-speed networks
-    const pending = (transfer as any)._pendingWrites ?? 0;
-    (transfer as any)._pendingWrites = pending + 1;
-    if (pending >= 100 && !transfer.isPaused) {
-      this.sendSystemMessage({ type: "pause_transfer", fileId: activeFileId });
-      transfer.isPaused = true;
-    }
-
-    // Smart-Batching: Group by total byte size (e.g., 2MB) to protect mobile RAM
-    const currentBatchSize = transfer.chunkBuffer.reduce((sum, c) => sum + c.data.byteLength, 0);
-    const BATCH_THRESHOLD = 2 * 1024 * 1024; // 2MB: Perfect for mobile RAM bursts
+    const BATCH_THRESHOLD = 2 * 1024 * 1024; // 2MB
+    const currentBatchSize = transfer.chunkBuffer.length * CHUNK_SIZE; // Fast estimation
 
     if (currentBatchSize >= BATCH_THRESHOLD || isWireComplete) {
       const batch = [...transfer.chunkBuffer];
+      const batchBytes = batch.reduce((sum, item) => sum + item.data.byteLength, 0); // Only run once per 2MB
       transfer.chunkBuffer = [];
 
-      // CRITICAL: Chain onto a per-file sequential promise queue.
-      // This ensures batches are written ONE AT A TIME in order.
       const prevWrite = this.fileWriteQueues.get(activeFileId) ?? Promise.resolve();
       const thisWrite = prevWrite.then(async () => {
-        const stream = this.activeFileStreams.get(activeFileId);
         try {
+          const stream = this.activeFileStreams.get(activeFileId);
           if (stream) {
-            // Streaming mode: Write chunks sequentially within the batch
-            for (const item of batch) {
-              await (stream as any).write(item.data);
-            }
+            for (const item of batch) await (stream as any).write(item.data);
           } else {
-            // IndexedDB mode: High-efficiency multi-row insert
             await this.dbManager.addChunks(activeFileId, batch);
           }
         } catch (err) {
@@ -680,17 +622,10 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           return;
         }
         
-        transfer.completed += batch.length;
+        transfer.completedBytes += batchBytes;
 
-        // Decrement pending (by batch size), resume sender if pressure drops
-        const remaining = ((transfer as any)._pendingWrites ?? 0) - batch.length;
-        (transfer as any)._pendingWrites = Math.max(0, remaining);
-        if (transfer.isPaused && remaining < 20) {
-          this.sendSystemMessage({ type: "resume_transfer", fileId: activeFileId });
-          transfer.isPaused = false;
-        }
-
-        if (transfer.completed === transfer.meta.totalChunks) {
+        if (transfer.completedBytes >= transfer.meta.size) {
+          const stream = this.activeFileStreams.get(activeFileId);
           if (stream) {
             try { await (stream as any).close(); } catch {}
             this.activeFileStreams.delete(activeFileId);
@@ -715,15 +650,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     while (this.senderFileQueue.length > 0) {
       const task = this.senderFileQueue[0];
       if (!task) break;
-      console.log(`[WebRTC] Processing file: ${task.file.name} (${task.fileId})`);
-
-      // ADAPTIVE CHUNKING: Negotiate the maximum message size the link can handle
-      // Most modern browsers support 16KB to 256KB. Using the max reduces CPU overhead.
-      const peerMaxMsgSize = this.pc?.sctp?.maxMessageSize ?? 16384;
-      const adaptiveChunkSize = Math.min(peerMaxMsgSize, 256 * 1024); // Cap at 256KB for safe RAM
-      console.log(`[WebRTC] Negotiated Adaptive Chunk Size: ${adaptiveChunkSize} bytes`);
-
-      const totalChunks = Math.ceil(task.file.size / adaptiveChunkSize);
+      
+      const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
       
       // DEVICE-AWARE: Only use streaming if file is large AND browser supports it
       const streamingMode = 
@@ -778,8 +706,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       }
 
       try {
-        let totalSentChunks = 0;
         let offset = 0;
+        let totalSentChunks = 0;
+        const CHUNK_SIZE = 16384; 
 
         while (offset < task.file.size) {
           if (!this.fileChannel || this.fileChannel.readyState !== "open") {
@@ -787,14 +716,6 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
             return;
           }
 
-          const chunk = task.file.slice(offset, offset + adaptiveChunkSize);
-          const buffer = await chunk.arrayBuffer();
-          this.fileChannel.send(buffer);
-
-          offset += adaptiveChunkSize;
-          totalSentChunks++;
-
-          // Flow Control: wait only when local WebRTC buffer is actually full
           if (this.fileChannel.bufferedAmount >= HIGH_WATERMARK) {
             await new Promise<void>((resolve) => {
               const onLow = () => {
@@ -802,28 +723,18 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
                 resolve();
               };
               this.fileChannel?.addEventListener("bufferedamountlow", onLow);
-              setTimeout(onLow, 500); // Safety: 500ms max wait
+              setTimeout(onLow, 500); 
             });
           }
 
-          // Application-level backpressure from receiver
-          if (this.remoteTransferPaused) {
-            await new Promise<void>(resolve => {
-              this.pauseResolver = resolve;
-              setTimeout(resolve, 5000); // 5s safety timeout
-            });
-          }
-
-          // Surgical slice: only 16 KB in JS heap at this point
           const end = Math.min(offset + CHUNK_SIZE, task.file.size);
           const chunkData = await task.file.slice(offset, end).arrayBuffer();
-          // Send ArrayBuffer directly (no extra Uint8Array copy)
           this.fileChannel.send(chunkData);
-          offset = end; // Use end (not offset + CHUNK_SIZE) to avoid overshoot
+          offset = end; 
           totalSentChunks++;
 
-          // Update progress every 50 chunks (~800 KB)
-          if (totalSentChunks % 50 === 0 || offset >= task.file.size) {
+          // Smooth progress emission every 1MB
+          if (totalSentChunks % 64 === 0 || offset >= task.file.size) {
             this.emit("file_progress", task.fileId, Math.min(100, Math.round((offset / task.file.size) * 100)));
           }
           // No setTimeout(0) — the await above yields naturally to the event loop
@@ -851,14 +762,24 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     return URL.createObjectURL(blob);
   }
 
-  /**
-   * Rejects an incoming file transfer and notifies the sender.
-   */
-  public rejectFile(fileId: string) {
-    this.sendSystemMessage({ type: "file_rejected", fileId });
-    this.incomingFiles.delete(fileId);
-    this.fileTransferQueue = this.fileTransferQueue.filter(id => id !== fileId);
-    this.emit("file_error", fileId, "Declined");
+  public resetConnection(sessionIdToCleanup?: string) {
+    if (this.cleanupTimeout) clearTimeout(this.cleanupTimeout);
+
+    // If a specific session ID is provided, it's likely a React unmount cleanup.
+    // We debounce this to handle React 18 Strict Mode remounts.
+    if (sessionIdToCleanup) {
+      console.log("[WebRTC] Scheduling cleanup for session:", sessionIdToCleanup);
+      this.cleanupTimeout = setTimeout(() => {
+        console.log("[WebRTC] Executing delayed cleanup for session:", sessionIdToCleanup);
+        this.cleanupConnection();
+        this.cleanupTimeout = null;
+      }, 1000); // 1 second buffer is very safe for Strict Mode
+      return;
+    }
+
+    // Manual / Immediate cleanup (e.g. clicking "Leave" or "Cancel")
+    console.log("[WebRTC] Immediate connection reset requested");
+    this.cleanupConnection();
   }
 
   private cleanupConnection() {
@@ -880,6 +801,34 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
     // Wipe cached blobs from IndexedDB when session ends
     this.dbManager.clearAll().catch(e => console.error("[IndexedDB] Clear failed", e));
+  }
+
+  public async acceptLargeFileStream(fileId: string) {
+    const meta = this.pendingLargeFiles.get(fileId);
+    if (!meta) return;
+
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({ suggestedName: meta.name });
+      const writable = await (handle as any).createWritable();
+      this.activeFileStreams.set(fileId, writable);
+      
+      // Now move from pending to active
+      this.incomingFiles.set(fileId, { meta, receivedBytes: 0, completedBytes: 0, chunkBuffer: [] });
+      this.fileTransferQueue.push(fileId);
+      this.pendingLargeFiles.delete(fileId);
+
+      this.sendSystemMessage({ type: "stream_ready", fileId });
+      this.emit("file_progress", fileId, 1); // Trigger immediate UI update to hide 'Accept'
+      console.log(`[WebRTC] Large file accepted and stream ready: ${fileId}`);
+    } catch (err) {
+      console.error("[WebRTC] Failed to initialize file stream:", err);
+    }
+  }
+
+  public rejectFile(fileId: string) {
+    this.pendingLargeFiles.delete(fileId);
+    this.sendSystemMessage({ type: "file_rejected", fileId });
   }
 }
 

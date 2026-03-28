@@ -82,25 +82,12 @@ export default function FileBubble({ message }: FileBubbleProps) {
   }
 
   const handleAcceptStream = async () => {
-    // @ts-ignore
-    if (!file.streamingMode || !window.showSaveFilePicker) {
-      alert("Disk streaming is not supported on this browser or file.")
-      return
-    }
-
     try {
       // @ts-ignore
-      const handle = await window.showSaveFilePicker({ suggestedName: file.name })
-      const writable = await handle.createWritable()
-      // @ts-ignore
       const { webRTCManager } = await import("@/lib/webrtc/WebRTCManager")
-      webRTCManager.acceptLargeFileStream(file.fileId, writable)
+      webRTCManager.acceptLargeFileStream(file.fileId)
     } catch (err: any) {
-      if (err.name === "AbortError") {
-        console.log("[FILES] User cancelled file picker")
-      } else {
-        console.error("[FILES] Stream setup failed:", err)
-      }
+      console.error("[FILES] Stream setup failed:", err)
     }
   }
 

@@ -651,8 +651,11 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       transfer.isPaused = true;
     }
 
-    // Batch writing (group of 50 chunks OR very last chunk)
-    if (transfer.chunkBuffer.length >= 50 || isWireComplete) {
+    // Smart-Batching: Group by total byte size (e.g., 2MB) to protect mobile RAM
+    const currentBatchSize = transfer.chunkBuffer.reduce((sum, c) => sum + c.data.byteLength, 0);
+    const BATCH_THRESHOLD = 2 * 1024 * 1024; // 2MB: Perfect for mobile RAM bursts
+
+    if (currentBatchSize >= BATCH_THRESHOLD || isWireComplete) {
       const batch = [...transfer.chunkBuffer];
       transfer.chunkBuffer = [];
 
@@ -714,7 +717,13 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       if (!task) break;
       console.log(`[WebRTC] Processing file: ${task.file.name} (${task.fileId})`);
 
-      const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
+      // ADAPTIVE CHUNKING: Negotiate the maximum message size the link can handle
+      // Most modern browsers support 16KB to 256KB. Using the max reduces CPU overhead.
+      const peerMaxMsgSize = this.pc?.sctp?.maxMessageSize ?? 16384;
+      const adaptiveChunkSize = Math.min(peerMaxMsgSize, 256 * 1024); // Cap at 256KB for safe RAM
+      console.log(`[WebRTC] Negotiated Adaptive Chunk Size: ${adaptiveChunkSize} bytes`);
+
+      const totalChunks = Math.ceil(task.file.size / adaptiveChunkSize);
       
       // DEVICE-AWARE: Only use streaming if file is large AND browser supports it
       const streamingMode = 
@@ -777,6 +786,13 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
             this.emit("file_error", task.fileId, "Channel closed during transfer");
             return;
           }
+
+          const chunk = task.file.slice(offset, offset + adaptiveChunkSize);
+          const buffer = await chunk.arrayBuffer();
+          this.fileChannel.send(buffer);
+
+          offset += adaptiveChunkSize;
+          totalSentChunks++;
 
           // Flow Control: wait only when local WebRTC buffer is actually full
           if (this.fileChannel.bufferedAmount >= HIGH_WATERMARK) {

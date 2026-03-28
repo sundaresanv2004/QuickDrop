@@ -12,21 +12,18 @@ export class IndexedDBManager {
       }
       const request = indexedDB.open(this.dbName, this.version);
 
-      // On startup, we want to clear any leftover fragments from crashed sessions
-      // so we don't waste the user's mobile storage.
-      this.initFinished = this.clearAll().catch(() => {});
-
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(this.storeName)) {
-          // Auto increment key, index by fileId for easy retrieval
           const store = db.createObjectStore(this.storeName, { autoIncrement: true });
           store.createIndex("fileId", "fileId", { unique: false });
         }
       };
 
-      request.onsuccess = (event) => {
+      request.onsuccess = async (event) => {
         this.db = (event.target as IDBOpenDBRequest).result;
+        // Clean up any stale fragments on startup (Sanity Sweep)
+        try { await this.clearAll(); } catch {}
         resolve();
       };
 

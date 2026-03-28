@@ -98,9 +98,20 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.dbManager.init().catch(err => console.error("[IndexedDB] Init failed:", err));
 
     if (typeof window !== "undefined") {
-      window.addEventListener("beforeunload", () => {
-        // Clear all temporary transfer data on tab close
-        this.dbManager.clearAll().catch(() => {});
+      const clear = () => this.dbManager.clearAll().catch(() => {});
+      
+      // Desktop: fires on tab close (most of the time)
+      window.addEventListener("beforeunload", clear);
+      
+      // Mobile: Much more reliable for iOS/Android when app is closed or hidden
+      window.addEventListener("pagehide", clear);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          // If we're hidden, we might be killed. 
+          // We can't clear here if we want background transfers, 
+          // BUT if we're not sent/receiving, it's safer to clear.
+          // For now, let's stick to pagehide for true "close".
+        }
       });
     }
   }

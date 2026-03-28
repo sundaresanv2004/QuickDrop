@@ -2,6 +2,7 @@ import { EventEmitter } from './EventEmitter';
 import { Peer, WSMessage, WelcomeMessage, PeerListMessage, PeerJoinedMessage, PeerLeftMessage } from '@/types/messages';
 import { ChatMessage, SystemPayload, TextMessagePayload, ReactionMessagePayload, FileMetaPayload, ChatPayload } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
+import { IndexedDBManager } from './IndexedDBManager';
 
 export type ConnectionStatus =
   | "idle"
@@ -33,7 +34,7 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'reaction': [messageId: string, emoji: string, fromId: string];
   'system_message': [payload: SystemPayload];
   'file_progress': [fileId: string, progress: number];
-  'file_complete': [fileId: string, objectUrl: string];
+  'file_complete': [fileId: string, objectUrl: string | null];
   'file_error': [fileId: string, error: string];
   'typing_state': [isTyping: boolean];
 }
@@ -68,7 +69,13 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private cleanupTimeout: NodeJS.Timeout | null = null;
 
   // File Transfer State
-  private incomingFiles: Map<string, { meta: FileMetaPayload, chunks: ArrayBuffer[], received: number }> = new Map();
+  private dbManager = new IndexedDBManager();
+  private incomingFiles: Map<string, { 
+    meta: FileMetaPayload, 
+    received: number, 
+    completed: number,
+    chunkBuffer: { chunkIndex: number, data: ArrayBuffer }[]
+  }> = new Map();
   private fileTransferQueue: string[] = []; 
   private senderFileQueue: FileUploadTask[] = [];
   private isProcessingQueue: boolean = false;
@@ -77,6 +84,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
   constructor() {
     super();
+    this.dbManager.init().catch(err => console.error("[IndexedDB] Init failed:", err));
   }
 
   // --- PUBLIC API ---
@@ -245,7 +253,6 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.senderFileQueue.push({ file, fileId });
     
     // Announce to UI
-    const objectUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
     const fileMessage: ChatMessage = {
       id: fileId,
       type: "file",
@@ -258,7 +265,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         mimeType: file.type || "application/octet-stream", 
         status: "sending", 
         progress: 0, 
-        objectUrl 
+        objectUrl: null, // Full file stays on disk/memory handle
       }
     };
     this.emit("chat_message", fileMessage);
@@ -503,12 +510,12 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           
           if (!payload.streamingMode) {
             // Small file: Accept automatically
-            this.incomingFiles.set(payload.fileId, { meta: payload, chunks: [], received: 0 });
+            this.incomingFiles.set(payload.fileId, { meta: payload, received: 0, completed: 0, chunkBuffer: [] });
             this.fileTransferQueue.push(payload.fileId);
             this.sendSystemMessage({ type: "stream_ready", fileId: payload.fileId });
           } else {
             // Large file: UI will call acceptLargeFileStream after user picks a location
-            this.incomingFiles.set(payload.fileId, { meta: payload, chunks: [], received: 0 });
+            this.incomingFiles.set(payload.fileId, { meta: payload, received: 0, completed: 0, chunkBuffer: [] });
             this.fileTransferQueue.push(payload.fileId);
           }
           break;
@@ -519,6 +526,17 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           const resolve = this.pendingStreamApprovals.get(payload.fileId);
           if (resolve) {
             resolve(true);
+            this.pendingStreamApprovals.delete(payload.fileId);
+          }
+          break;
+        case "file_rejected":
+          console.warn(`[WebRTC] File was rejected by receiver: ${payload.fileId}`);
+          this.emit("file_error", payload.fileId, "Rejected by receiver");
+          
+          // CRITICAL: Resolve the pending approval promise so the sender loop can move on
+          const resolveReject = this.pendingStreamApprovals.get(payload.fileId);
+          if (resolveReject) {
+            resolveReject(false);
             this.pendingStreamApprovals.delete(payload.fileId);
           }
           break;
@@ -536,44 +554,69 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     const stream = this.activeFileStreams.get(activeFileId);
 
     if (stream) {
-      // Disk Streaming Mode
+      // Disk Streaming Mode (Large Files)
       try {
         await (stream as any).write(event.data);
       } catch (err) {
         console.error("[WebRTC] Disk write failed:", err);
         this.emit("file_error", activeFileId, "Disk write failed");
       }
-    } else {
-      // RAM Accumulation Mode
-      transfer.chunks.push(event.data);
-    }
+      transfer.received += 1;
+      transfer.completed += 1;
+      
+      this.emit("file_progress", activeFileId, Math.round((transfer.received / transfer.meta.totalChunks) * 100));
 
-    transfer.received += 1;
-    const progress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
-
-    if (progress % 5 === 0 || transfer.received === transfer.meta.totalChunks) {
-      this.emit("file_progress", activeFileId, progress);
-    }
-
-    if (transfer.received === transfer.meta.totalChunks) {
-      console.log(`[WebRTC] Receiver complete: ${activeFileId}`);
-      if (stream) {
+      if (transfer.completed === transfer.meta.totalChunks) {
         try {
           await (stream as any).close();
           this.activeFileStreams.delete(activeFileId);
-          this.emit("file_complete", activeFileId, ""); // No URL for disk files
+          this.emit("file_complete", activeFileId, "");
         } catch {}
-      } else {
-        try {
-          const blob = new Blob(transfer.chunks, { type: transfer.meta.mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          this.emit("file_complete", activeFileId, objectUrl);
-        } catch (err) {
-          this.emit("file_error", activeFileId, "Assembly failed");
-        }
+        this.incomingFiles.delete(activeFileId);
+        this.fileTransferQueue.shift();
       }
-      this.incomingFiles.delete(activeFileId);
-      this.fileTransferQueue.shift();
+    } else {
+      // IndexedDB Accumulation Mode (Bypass RAM via Batching)
+      const chunkIndex = transfer.received;
+      transfer.received += 1;
+      transfer.chunkBuffer.push({ chunkIndex, data: event.data });
+
+      // Calculate progress based on WIRE arrival
+      const wireProgress = Math.round((transfer.received / transfer.meta.totalChunks) * 100);
+      if (wireProgress % 5 === 0 || transfer.received === transfer.meta.totalChunks) {
+        this.emit("file_progress", activeFileId, wireProgress);
+      }
+
+      // 1. If wire-transfer is done, IMMEDIATELY shift queue so next file can start receiving
+      const isWireComplete = transfer.received === transfer.meta.totalChunks;
+      if (isWireComplete) {
+        this.fileTransferQueue.shift();
+      }
+
+      // 2. Batch write if buffer is full OR it's the very last chunk
+      if (transfer.chunkBuffer.length >= 20 || isWireComplete) {
+        const bufferToFlush = [...transfer.chunkBuffer];
+        transfer.chunkBuffer = [];
+
+        // Run writing in background so it doesn't block the next chunk arrival
+        // Note: Using a closure to keep a reference to 'transfer' and 'activeFileId'
+        (async (fileId, currentTransfer, batch) => {
+          try {
+            await this.dbManager.addChunks(fileId, batch);
+            currentTransfer.completed += batch.length;
+
+            // 3. Final Assembly Logic
+            if (currentTransfer.completed === currentTransfer.meta.totalChunks) {
+              console.log(`[WebRTC] Receiver disk-write complete: ${fileId}`);
+              this.emit("file_complete", fileId, null);
+              this.incomingFiles.delete(fileId);
+            }
+          } catch (err) {
+            console.error("[IndexedDB] Batch write failed:", err);
+            this.emit("file_error", fileId, "Database write failed");
+          }
+        })(activeFileId, transfer, bufferToFlush);
+      }
     }
   }
 
@@ -704,6 +747,25 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.isProcessingQueue = false;
   }
 
+  /**
+   * Retrieves a full file from IndexedDB and returns a temporary ObjectURL.
+   * Callers should revoke this URL after use to clear RAM.
+   */
+  public async getDownloadUrl(fileId: string, mimeType: string): Promise<string> {
+    const blob = await this.dbManager.getFileBlob(fileId, mimeType);
+    return URL.createObjectURL(blob);
+  }
+
+  /**
+   * Rejects an incoming file transfer and notifies the sender.
+   */
+  public rejectFile(fileId: string) {
+    this.sendSystemMessage({ type: "file_rejected", fileId });
+    this.incomingFiles.delete(fileId);
+    this.fileTransferQueue = this.fileTransferQueue.filter(id => id !== fileId);
+    this.emit("file_error", fileId, "Declined");
+  }
+
   private cleanupConnection() {
     if (this.chatChannel) this.chatChannel.close(); this.chatChannel = null;
     if (this.fileChannel) this.fileChannel.close(); this.fileChannel = null;
@@ -720,6 +782,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.incomingRequest = null;
     this.targetPeerId = null;
     this.activeChatPeerId = null;
+
+    // Wipe cached blobs from IndexedDB when session ends
+    this.dbManager.clearAll().catch(e => console.error("[IndexedDB] Clear failed", e));
   }
 }
 

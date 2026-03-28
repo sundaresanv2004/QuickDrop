@@ -1,8 +1,9 @@
 "use client"
-
+import React, { useState } from "react"
 import { ChatMessage } from "@/types/chat"
 import { cn, formatFileSize, formatTimestamp } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
+import { Button } from "@/components/ui/button"
 import {
   Image01Icon,
   Video01Icon,
@@ -15,10 +16,11 @@ import {
   SmileIcon,
   Tick01Icon,
   TickDouble01Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons"
 import FileProgressBar from "./FileProgressBar"
 import { useWebRTC } from "@/context/WebRTCContext"
-import { useState } from "react"
 import {
   Popover,
   PopoverContent,
@@ -47,12 +49,31 @@ export default function FileBubble({ message }: FileBubbleProps) {
   const file   = message.file
   const isSent = message.direction === "sent"
 
-  const handleDownload = () => {
-    if (!file.objectUrl) return
+  const handleDownload = async () => {
+    let url = file.objectUrl
+    
+    // If we are in Low-RAM mode, fetch the full blob on-demand
+    if (!url) {
+      try {
+        const { webRTCManager } = await import("@/lib/webrtc/WebRTCManager")
+        url = await webRTCManager.getDownloadUrl(file.fileId, file.mimeType)
+      } catch (err) {
+        console.error("[FILES] Failed to fetch full file for download:", err)
+        return
+      }
+    }
+
+    if (!url) return
+
     const a    = document.createElement("a")
-    a.href     = file.objectUrl
+    a.href     = url
     a.download = file.name
     a.click()
+
+    // Clean up temporary URL after a short delay if we generated it on-demand
+    if (!file.objectUrl && url) {
+      setTimeout(() => URL.revokeObjectURL(url!), 1000)
+    }
   }
 
   const handleReaction = (emoji: string) => {
@@ -114,8 +135,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
     </Popover>
   )
 
-  const images = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]
-  const isImage = images.includes(file.mimeType)
+  const isImage = file.mimeType.startsWith("image/")
 
   return (
     <div className={cn("flex w-full mb-1 group/msg relative", isSent ? "justify-end" : "justify-start")}>
@@ -129,22 +149,6 @@ export default function FileBubble({ message }: FileBubbleProps) {
             )}
             onContextMenu={(e) => { e.preventDefault(); setShowPicker(true) }}
           >
-            {/* Image Preview - show if we have an objectUrl at any stage */}
-            {isImage && file.objectUrl && (
-              <div className="rounded-lg overflow-hidden max-h-36 sm:max-h-44 border border-black/5 bg-black/5">
-                <img
-                  src={file.objectUrl}
-                  alt={file.name}
-                  className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={(e) => { e.stopPropagation(); window.open(file.objectUrl!, "_blank") }}
-                />
-              </div>
-            )}
-            {!isSent && isImage && !file.objectUrl && file.status === "receiving" && (
-              <div className="rounded-lg bg-black/10 h-28 flex items-center justify-center">
-                <HugeiconsIcon icon={Image01Icon} size={24} color="currentColor" className="opacity-40" />
-              </div>
-            )}
 
             <div 
               className={cn(
@@ -172,55 +176,79 @@ export default function FileBubble({ message }: FileBubbleProps) {
               </div>
  
               {(file.status === "sending" || file.status === "receiving") && (
-                <div className="flex items-center gap-1.5">
-                  {!isSent && file.status === "receiving" && file.streamingMode && file.progress === 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleAcceptStream() }}
-                      className="px-2.5 py-1 rounded-md bg-foreground text-background text-[11px] font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-1 shadow-lg border border-background/20"
-                    >
-                      <HugeiconsIcon icon={Download01Icon} size={14} />
-                      ACCEPT & SAVE
-                    </button>
-                  )}
-                  <HugeiconsIcon icon={Loading03Icon} size={16} color="currentColor" className="animate-spin opacity-70" />
+                <div className="flex items-center gap-1.5 font-mono">
+                  <HugeiconsIcon icon={Loading03Icon} size={15} color="currentColor" className="animate-spin opacity-60" />
                 </div>
               )}
               {file.status === "complete" && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDownload() }}
-                  className={cn("w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-black/10", isSent ? "bg-primary-foreground/15" : "bg-background/50")}
+                <Button
+                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDownload() }}
+                  size="icon"
+                  variant="ghost"
+                  className={cn("w-7 h-7 rounded-lg", isSent ? "bg-white/10 hover:bg-white/20" : "bg-black/5 hover:bg-black/10")}
                   title="Download"
                 >
                   <HugeiconsIcon icon={Download01Icon} size={14} color="currentColor" />
-                </button>
+                </Button>
               )}
             </div>
 
-            {(file.status === "sending" || file.status === "receiving") && (
-              <FileProgressBar progress={file.progress} className={cn("h-1", isSent ? "[&>div]:bg-primary-foreground" : "")} />
+            {(file.status === "sending" || file.status === "receiving") && file.progress > 0 && (
+              <FileProgressBar progress={file.progress} className={cn("mt-1.5 h-1", isSent ? "[&>div]:bg-primary-foreground" : "")} />
             )}
 
+            {/* Large File Action Row (Waiting for Approval) */}
+            {!isSent && file.status === "receiving" && file.streamingMode && file.progress === 0 && (
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/10 mt-2">
+                <p className="text-[10px] opacity-60 italic text-center leading-tight">
+                  Size: {formatFileSize(file.size)}. Start stream?
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={(e: React.MouseEvent) => { 
+                      e.stopPropagation();
+                      import("@/lib/webrtc/WebRTCManager").then(m => m.webRTCManager.rejectFile(file.fileId))
+                    }}
+                    variant="ghost"
+                    className="h-8 rounded-lg bg-red-400/10 hover:bg-red-400/20 text-red-400 text-[10px] font-bold border border-red-500/20 min-w-[100px]"
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} size={12} />
+                    DECLINE
+                  </Button>
+                  <Button
+                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleAcceptStream() }}
+                    variant="outline"
+                    className="h-8 rounded-lg bg-green-400/10 hover:bg-green-400/20 text-green-400 text-[10px] font-bold shadow-lg border border-green-500/30 min-w-[100px]"
+                  >
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} size={12} />
+                    ACCEPT & SAVE
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Time & Status Row */}
             <div className={cn("flex items-center gap-1.5 mt-1", isSent ? "justify-end" : "justify-between")}>
-              <span className={cn("text-[9px] font-medium opacity-60", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
+              <span className={cn("text-[8px] font-medium opacity-50", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
                 {formatTimestamp(message.timestamp)}
               </span>
               
               {!isSent && file.status === "complete" && (
                 <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight opacity-70">
-                  TAP TO DOWNLOAD
+                  Ready to Download
                 </span>
               )}
 
               {isSent && (
-                <div className="flex items-center opacity-60">
-                  {file.status === "sending" && (
+                <div className="flex items-center opacity-70">
+                  {isSent && file.status === "sending" && (
                     <HugeiconsIcon icon={Tick01Icon} size={12} className={cn(isSent ? "text-primary-foreground" : "text-muted-foreground")} />
                   )}
-                  {file.status === "complete" && (
+                  {isSent && file.status === "complete" && (
                     <HugeiconsIcon icon={TickDouble01Icon} size={13} className={cn(isSent ? "text-primary-foreground" : "text-muted-foreground")} />
                   )}
                   {file.status === "error" && (
-                    <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive" />
+                    <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive saturate-150" />
                   )}
                 </div>
               )}

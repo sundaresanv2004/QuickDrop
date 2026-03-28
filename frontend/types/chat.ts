@@ -17,6 +17,7 @@ export interface FileInfo {
   progress:  number          // 0–100
   objectUrl: string | null   // set only when status === "complete"
   streamingMode?: boolean    // true if >= 500MB, used for disk streaming prompts
+  statusReason?: string      // e.g. "Declined" or "Network Error"
 }
 
 // ─── Single chat message (text or file) ───
@@ -81,12 +82,18 @@ export interface ByePayload {
   type: "bye"
 }
 
+export interface FileRejectedPayload {
+  type: "file_rejected"
+  fileId: string
+}
+
 // Union of all system channel payloads
 export type SystemPayload =
   | FileMetaPayload
   | StreamReadyPayload
   | TypingPayload
   | ByePayload
+  | FileRejectedPayload
 
 export interface ReactionMessagePayload {
   type:      "reaction_message"

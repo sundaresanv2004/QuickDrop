@@ -76,7 +76,7 @@ export function useWebRTCBridge() {
       ));
     });
     const unsubFileErr = webRTCManager.on('file_error', (fileId, err) => {
-      setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, status: 'error' } } : m));
+      setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, status: 'error', statusReason: err } } : m));
     });
 
     const unsubTyping = webRTCManager.on('typing_state', setIsTyping);

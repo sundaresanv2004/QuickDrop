@@ -5,12 +5,22 @@ import { useWebRTC } from "@/context/WebRTCContext"
 import { useWebRTCBridge } from "@/hooks/useWebRTCBridge"
 import { useState, useEffect } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { SmileIcon, TickDouble01Icon } from "@hugeicons/core-free-icons"
+import { SmileIcon, TickDouble01Icon, Copy01Icon, Link01Icon } from "@hugeicons/core-free-icons"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import { toast } from "sonner"
 import ReactionBadge from "./ReactionBadge"
 
 interface MessageBubbleProps {
@@ -27,7 +37,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   const isSent = message.direction === "sent"
   const reactions = message.reactions || {}
 
-  const emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+  const emojis = ["👍", "❤️", "😂", "😅", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯", "🎉", "🙏"]
 
   const handleReaction = (emoji: string) => {
     sendReaction(message.id, emoji)
@@ -44,20 +54,22 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
       <PopoverContent 
         side="top" 
         align={align} 
-        className="w-auto p-1.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl flex flex-row gap-1 animate-in zoom-in-95 duration-200"
+        className="w-[230px] p-1.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
       >
-        {emojis.map(emoji => (
-          <button
-            key={emoji}
-            onClick={() => handleReaction(emoji)}
-            className={cn(
-              "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90",
-              myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
-            )}
-          >
-            {emoji}
-          </button>
-        ))}
+        <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+          {emojis.map(emoji => (
+            <button
+              key={emoji}
+              onClick={() => handleReaction(emoji)}
+              className={cn(
+                "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0",
+                myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
+              )}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   )
@@ -93,7 +105,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   const LinkifiedText = ({ text }: { text: string }) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g
     const parts = text.split(urlRegex)
-    
+
     return (
       <>
         {parts.map((part, i) => {
@@ -121,72 +133,139 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   }
 
   return (
-    <div
-      className={cn(
-        "flex w-full mb-1 group/msg relative animate-in fade-in slide-in-from-bottom-1 duration-300",
-        isSent ? "justify-end" : "justify-start"
-      )}
-    >
-      <div className={cn(
-        "flex flex-col max-w-[85%] sm:max-w-[75%]",
-        isSent ? "items-end" : "items-start"
-      )}>
-        <div className="flex items-center gap-1 w-full">
-          {/* Reaction trigger is on the opposite side of the bubble */}
-          {isSent && <EmojiPicker align="end" />}
-          
-          <div
-            className={cn(
-              "px-3 py-2 flex flex-col gap-0.5 select-none transition-transform flex-1 min-w-0 shadow-sm",
-              isSent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-              isSent
-                ? cn("rounded-2xl", isLastInGroup ? "rounded-br-sm" : "")
-                : cn("rounded-2xl", isLastInGroup ? "rounded-bl-sm" : "")
-            )}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setShowPicker(true)
-            }}
-          >
-            {message.linkPreview && <LinkEmbed preview={message.linkPreview} isSent={isSent} />}
-            <p className="text-sm border-none leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
-              <LinkifiedText text={message.content || ""} />
-            </p>
-            <div className={cn("flex items-center gap-1 mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
-              <span className={cn("text-[9px] select-none whitespace-nowrap font-medium", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
-                {formatTimestamp(message.timestamp)}
-              </span>
-              {isSent && (
-                <HugeiconsIcon 
-                  icon={TickDouble01Icon} 
-                  size={12} 
-                  className={cn("opacity-70", isSent ? "text-primary-foreground" : "text-muted-foreground")} 
-                />
-              )}
-            </div>
-          </div>
-
-          {!isSent && <EmojiPicker align="start" />}
-        </div>
-
-        {/* Reaction Display */}
-        {Object.keys(reactions).length > 0 && (
-          <div className={cn(
-            "flex flex-wrap gap-1 mt-1.5 px-1",
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          className={cn(
+            "flex w-full mb-1 group/msg relative animate-in fade-in slide-in-from-bottom-1 duration-300",
             isSent ? "justify-end" : "justify-start"
+          )}
+        >
+          <div className={cn(
+            "flex flex-col max-w-[85%] sm:max-w-[75%]",
+            isSent ? "items-end" : "items-start"
           )}>
-            {Object.entries(reactions).map(([emoji, userIds]) => (
-              <ReactionBadge
-                key={emoji}
-                emoji={emoji}
-                userIds={userIds}
-                myDeviceId={myDeviceId}
-                onClick={handleReaction}
-              />
-            ))}
+            <div className="flex items-center gap-1 w-full">
+              {/* Reaction trigger is on the opposite side of the bubble */}
+              {isSent && <EmojiPicker align="end" />}
+
+              <div
+                className={cn(
+                  "px-3 py-2 flex flex-col gap-0.5 select-none transition-transform flex-1 min-w-0 shadow-sm",
+                  isSent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+                  isSent
+                    ? cn("rounded-2xl", isLastInGroup ? "rounded-br-sm" : "")
+                    : cn("rounded-2xl", isLastInGroup ? "rounded-bl-sm" : "")
+                )}
+              >
+                {message.linkPreview && <LinkEmbed preview={message.linkPreview} isSent={isSent} />}
+                <p className="text-sm border-none leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
+                  <LinkifiedText text={message.content || ""} />
+                </p>
+                <div className={cn("flex items-center gap-1 mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
+                  <span className={cn("text-[9px] select-none whitespace-nowrap font-medium", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
+                    {formatTimestamp(message.timestamp)}
+                  </span>
+                  {isSent && (
+                    <HugeiconsIcon
+                      icon={TickDouble01Icon}
+                      size={12}
+                      className={cn("opacity-70", isSent ? "text-primary-foreground" : "text-muted-foreground")}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {!isSent && <EmojiPicker align="start" />}
+            </div>
+
+            {/* Reaction Display */}
+            {Object.keys(reactions).length > 0 && (
+              <div className={cn(
+                "flex flex-wrap gap-1 mt-1.5 px-1",
+                isSent ? "justify-end" : "justify-start"
+              )}>
+                {Object.entries(reactions).map(([emoji, userIds]) => (
+                  <ReactionBadge
+                    key={emoji}
+                    emoji={emoji}
+                    userIds={userIds}
+                    myDeviceId={myDeviceId}
+                    onClick={handleReaction}
+                  />
+                ))}
+              </div>
+            )}
           </div>
+        </div>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent className="w-56 rounded-2xl">
+        {message.content?.match(/(https?:\/\/[^\s]+)/) && (
+          <>
+            <ContextMenuItem 
+              onClick={() => {
+                const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
+                if (url) window.open(url, "_blank")
+              }}
+              className="gap-3"
+            >
+              <HugeiconsIcon icon={Link01Icon} size={18} />
+              <span>Open Link</span>
+            </ContextMenuItem>
+
+            <ContextMenuItem 
+              onClick={() => {
+                const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
+                if (url) {
+                  navigator.clipboard.writeText(url)
+                  toast.success("Link copied")
+                }
+              }}
+              className="gap-3"
+            >
+              <HugeiconsIcon icon={Copy01Icon} size={18} />
+              <span>Copy Link</span>
+            </ContextMenuItem>
+          </>
         )}
-      </div>
-    </div>
+
+        {!message.content?.match(/(https?:\/\/[^\s]+)/) && (
+          <ContextMenuItem 
+            onClick={() => {
+              navigator.clipboard.writeText(message.content || "")
+              toast.success("Text copied")
+            }}
+            className="gap-3"
+          >
+            <HugeiconsIcon icon={Copy01Icon} size={18} />
+            <span>Copy Text</span>
+          </ContextMenuItem>
+        )}
+
+        <ContextMenuSub>
+          <ContextMenuSubTrigger className="gap-3">
+            <HugeiconsIcon icon={SmileIcon} size={18} />
+            <span>React</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="p-1.5 rounded-full w-[230px]">
+            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide">
+              {emojis.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => handleReaction(emoji)}
+                  className={cn(
+                    "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0",
+                    myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
+                  )}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

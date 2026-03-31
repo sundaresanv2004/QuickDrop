@@ -52,9 +52,11 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
         </button>
       </PopoverTrigger>
       <PopoverContent
-        side="top"
+        side="bottom"
         align={align}
-        className="w-[230px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
+        collisionPadding={16}
+        sideOffset={8}
+        className="w-[210px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
       >
         <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
           {emojis.map(emoji => (
@@ -86,11 +88,21 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
       const url = match[0]
       const fetchPreview = async () => {
         try {
+          const cacheKey = `preview_cache_${url}`
+          try {
+            const cached = sessionStorage.getItem(cacheKey)
+            if (cached) {
+              updateMessage(message.id, { linkPreview: JSON.parse(cached) })
+              return
+            }
+          } catch(e) {}
+
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
           const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
           if (res.ok) {
             const data = await res.json()
             if (data && (data.title || data.image)) {
+              try { sessionStorage.setItem(cacheKey, JSON.stringify(data)) } catch(e) {}
               updateMessage(message.id, { linkPreview: data })
             }
           }
@@ -200,7 +212,23 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
         </div>
       </ContextMenuTrigger>
 
-      <ContextMenuContent className="w-56 rounded-2xl">
+      <ContextMenuContent className="w-56 rounded-2xl overflow-hidden" collisionPadding={16}>
+        {/* Inline Mobile-Safe Emoji Row */}
+        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full relative">
+          {emojis.map(emoji => (
+            <ContextMenuItem
+              key={emoji}
+              onClick={() => handleReaction(emoji)}
+              className={cn(
+                "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0 p-0 focus:bg-accent cursor-pointer",
+                myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
+              )}
+            >
+              {emoji}
+            </ContextMenuItem>
+          ))}
+        </div>
+
         {message.content?.match(/(https?:\/\/[^\s]+)/) && (
           <>
             <ContextMenuItem
@@ -208,7 +236,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
                 const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
                 if (url) window.open(url, "_blank")
               }}
-              className="gap-3"
+              className="gap-3 mt-1"
             >
               <HugeiconsIcon icon={Link01Icon} size={18} />
               <span>Open Link</span>
@@ -236,35 +264,12 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
               navigator.clipboard.writeText(message.content || "")
               toast.success("Text copied")
             }}
-            className="gap-3"
+            className="gap-3 mt-1"
           >
             <HugeiconsIcon icon={Copy01Icon} size={18} />
             <span>Copy Text</span>
           </ContextMenuItem>
         )}
-
-        <ContextMenuSub>
-          <ContextMenuSubTrigger className="gap-3">
-            <HugeiconsIcon icon={SmileIcon} size={18} />
-            <span>React</span>
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="px-1 py-0.5 rounded-full w-[230px]">
-            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
-              {emojis.map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => handleReaction(emoji)}
-                  className={cn(
-                    "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0",
-                    myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
-                  )}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
       </ContextMenuContent>
     </ContextMenu>
   )

@@ -671,8 +671,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       
       const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
       
-      // Any file >= 500MB is considered "large" and requires manual approval/streaming
-      const streamingMode = task.file.size >= 500 * 1024 * 1024;
+      // Any file >= 250MB is considered "large" and requires manual approval/streaming
+      const streamingMode = task.file.size >= 250 * 1024 * 1024;
 
       const meta: FileMetaPayload = { 
         type: "file_meta", 
@@ -846,6 +846,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       console.log(`[WebRTC] Large file accepted and ready: ${fileId}`);
     } catch (err) {
       console.error("[WebRTC] Failed to initialize file transfer:", err);
+      // If the user cancels the save dialog or it fails, reject the transfer
+      // so the UI and the sender aren't stuck waiting forever.
+      this.rejectFile(fileId);
     }
   }
 

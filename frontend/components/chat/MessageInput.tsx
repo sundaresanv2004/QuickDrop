@@ -162,6 +162,17 @@ export default function MessageInput({
               if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
               
               previewTimerRef.current = setTimeout(async () => {
+                // Check cache first
+                const cacheKey = `preview_cache_${url}`
+                try {
+                  const cached = sessionStorage.getItem(cacheKey)
+                  if (cached) {
+                    setPreview(JSON.parse(cached))
+                    fetchedUrls.current.add(url)
+                    return
+                  }
+                } catch(e) {}
+
                 setLoadingPreview(true)
                 try {
                   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
@@ -176,6 +187,9 @@ export default function MessageInput({
                     if (currentText.includes(url)) {
                       setPreview(data)
                       fetchedUrls.current.add(url)
+                      try {
+                        sessionStorage.setItem(cacheKey, JSON.stringify(data))
+                      } catch(e) {}
                     } else {
                       console.log("[LinkPreview] Input changed, discarding preview.")
                     }

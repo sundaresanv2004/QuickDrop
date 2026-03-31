@@ -151,6 +151,8 @@ export function useWebRTCBridge() {
     sendReaction: (msgId: string, emoji: string) => webRTCManager.sendReaction(msgId, emoji),
     sendSystemMessage: (payload: any) => webRTCManager.sendSystemMessage(payload),
     sendFile: (f: File) => webRTCManager.sendFile(f),
+    acceptLargeFileStream: (id: string) => webRTCManager.acceptLargeFileStream(id),
+    rejectFile: (id: string) => webRTCManager.rejectFile(id),
     
     // For chat input to know if channel open
     chatChannelOpen: status === "connected"

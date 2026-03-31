@@ -39,9 +39,9 @@ import ReactionBadge from "./ReactionBadge"
 import { useWebRTCBridge } from "@/hooks/useWebRTCBridge"
 
 function getFileIconForMime(mimeType: string) {
-  if (mimeType.startsWith("image/"))  return Image01Icon
-  if (mimeType.startsWith("video/"))  return Video01Icon
-  if (mimeType.startsWith("audio/"))  return MusicNote01Icon
+  if (mimeType.startsWith("image/")) return Image01Icon
+  if (mimeType.startsWith("video/")) return Video01Icon
+  if (mimeType.startsWith("audio/")) return MusicNote01Icon
   if (mimeType === "application/pdf") return Pdf01Icon
   return File01Icon
 }
@@ -51,17 +51,17 @@ interface FileBubbleProps {
 }
 
 export default function FileBubble({ message }: FileBubbleProps) {
-  const { sendReaction, myDeviceId } = useWebRTC()
+  const { sendReaction, myDeviceId, acceptLargeFileStream, rejectFile } = useWebRTC()
   const [showPicker, setShowPicker] = useState(false)
 
   if (message.type !== "file" || !message.file) return null
 
-  const file   = message.file
+  const file = message.file
   const isSent = message.direction === "sent"
 
   const handleDownload = async () => {
     let url = file.objectUrl
-    
+
     // If we are in Low-RAM mode, fetch the full blob on-demand
     if (!url) {
       try {
@@ -75,8 +75,8 @@ export default function FileBubble({ message }: FileBubbleProps) {
 
     if (!url) return
 
-    const a    = document.createElement("a")
-    a.href     = url
+    const a = document.createElement("a")
+    a.href = url
     a.download = file.name
     a.click()
 
@@ -93,9 +93,10 @@ export default function FileBubble({ message }: FileBubbleProps) {
 
   const handleAcceptStream = async () => {
     try {
+      // Direct call so we don't lose the secure "User Gesture" context
+      // required by the browser's window.showSaveFilePicker API
       // @ts-ignore
-      const { webRTCManager } = await import("@/lib/webrtc/WebRTCManager")
-      webRTCManager.acceptLargeFileStream(file.fileId)
+      acceptLargeFileStream?.(file.fileId)
     } catch (err: any) {
       console.error("[FILES] Stream setup failed:", err)
     }
@@ -111,10 +112,12 @@ export default function FileBubble({ message }: FileBubbleProps) {
           <HugeiconsIcon icon={SmileIcon} size={16} />
         </button>
       </PopoverTrigger>
-      <PopoverContent 
-        side="top" 
-        align={align} 
-        className="w-[230px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
+      <PopoverContent
+        side="bottom"
+        align={align}
+        collisionPadding={16}
+        sideOffset={8}
+        className="w-[215px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
       >
         <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
           {emojis.map(emoji => (
@@ -150,7 +153,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                 )}
               >
 
-                <div 
+                <div
                   className={cn(
                     "flex items-center gap-2",
                     !isSent && file.status === "complete" && !file.streamingMode ? "cursor-pointer" : ""
@@ -165,7 +168,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                   <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", isSent ? "bg-primary-foreground/15" : "bg-background/50")}>
                     <HugeiconsIcon icon={getFileIconForMime(file.mimeType)} size={18} color="currentColor" />
                   </div>
-    
+
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold truncate leading-tight">{file.name}</p>
                     <p className={cn("text-[10px] mt-0.5", isSent ? "text-primary-foreground/70" : "text-muted-foreground")}>
@@ -174,7 +177,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                       {file.status === "receiving" && file.progress > 0 && ` · ${file.progress}%`}
                     </p>
                   </div>
-    
+
                   {(file.status === "sending" || file.status === "receiving") && (
                     <div className="flex items-center gap-1.5 font-mono">
                       <HugeiconsIcon icon={Loading03Icon} size={15} color="currentColor" className="animate-spin opacity-60" />
@@ -194,7 +197,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                 </div>
 
                 {(file.status === "sending" || file.status === "receiving") && file.progress > 0 && (
-                  <FileProgressBar progress={file.progress} className={cn("mt-1.5 h-1", isSent ? "[&>div]:bg-primary-foreground" : "")} />
+                  <FileProgressBar progress={file.progress} className={cn("mt-1.5 h-1 bg-black/10 dark:bg-white/10", isSent ? "[&>div]:bg-primary-foreground bg-black/20" : "")} />
                 )}
 
                 {/* Large File Action Row (Waiting for Approval) */}
@@ -205,9 +208,9 @@ export default function FileBubble({ message }: FileBubbleProps) {
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                       <Button
-                        onClick={(e: React.MouseEvent) => { 
+                        onClick={(e: React.MouseEvent) => {
                           e.stopPropagation();
-                          import("@/lib/webrtc/WebRTCManager").then(m => m.webRTCManager.rejectFile(file.fileId))
+                          rejectFile?.(file.fileId);
                         }}
                         variant="ghost"
                         className="h-8 rounded-lg bg-red-400/10 hover:bg-red-400/20 text-red-400 text-[10px] font-bold border border-red-500/20 min-w-[100px]"
@@ -232,7 +235,7 @@ export default function FileBubble({ message }: FileBubbleProps) {
                   <span className={cn("text-[8px] font-medium opacity-50", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
                     {formatTimestamp(message.timestamp)}
                   </span>
-                  
+
                   {!isSent && file.status === "complete" && !file.streamingMode && (
                     <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight opacity-70">
                       Ready to Download
@@ -284,39 +287,32 @@ export default function FileBubble({ message }: FileBubbleProps) {
         </div>
       </ContextMenuTrigger>
 
-      <ContextMenuContent className="w-56 rounded-2xl">
+      <ContextMenuContent className="w-56 rounded-2xl overflow-hidden" collisionPadding={16}>
+        {/* Inline Mobile-Safe Emoji Row */}
+        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full relative">
+          {emojis.map(emoji => (
+            <ContextMenuItem
+              key={emoji}
+              onClick={() => handleReaction(emoji)}
+              className={cn(
+                "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0 p-0 focus:bg-accent cursor-pointer",
+                myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
+              )}
+            >
+              {emoji}
+            </ContextMenuItem>
+          ))}
+        </div>
+
         {file.status === "complete" && !file.streamingMode && (
-          <ContextMenuItem 
+          <ContextMenuItem
             onClick={() => handleDownload()}
-            className="gap-3"
+            className="gap-3 mt-1"
           >
             <HugeiconsIcon icon={Download01Icon} size={18} />
             <span>Download</span>
           </ContextMenuItem>
         )}
-
-        <ContextMenuSub>
-          <ContextMenuSubTrigger className="gap-3">
-            <HugeiconsIcon icon={SmileIcon} size={18} />
-            <span>React</span>
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="px-1 py-0.5 rounded-full w-[230px]">
-            <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
-              {emojis.map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => handleReaction(emoji)}
-                  className={cn(
-                    "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0",
-                    myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
-                  )}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
       </ContextMenuContent>
     </ContextMenu>
   )

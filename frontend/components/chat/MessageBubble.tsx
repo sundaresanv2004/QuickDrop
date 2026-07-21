@@ -96,7 +96,7 @@ export default function MessageBubble({ message, isLastInGroup = true, peerName 
             const cached = sessionStorage.getItem(cacheKey)
             if (cached) { updateMessage(message.id, { linkPreview: JSON.parse(cached) }); return }
           } catch(e) {}
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
           const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
           if (res.ok) {
             const data = await res.json()

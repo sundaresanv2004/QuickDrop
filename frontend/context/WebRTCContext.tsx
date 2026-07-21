@@ -24,7 +24,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!envUrl && typeof window !== "undefined") {
       const hostname = window.location.hostname;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      envUrl = `${proto}//${hostname}:8001/ws/connect`;
+      envUrl = `${proto}//${hostname}:8000/ws/connect`;
     }
 
     if (typeof window !== "undefined") {

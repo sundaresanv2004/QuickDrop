@@ -23,10 +23,10 @@ const getApiUrl = (path: string) => {
     }
     return `${base}${cleanPath}`;
   }
-  if (typeof window === "undefined") return `http://localhost:8001/api${cleanPath}`;
+  if (typeof window === "undefined") return `http://localhost:8000/api${cleanPath}`;
   
   const hostname = window.location.hostname;
-  return `${window.location.protocol}//${hostname}:8001/api${cleanPath}`;
+  return `${window.location.protocol}//${hostname}:8000/api${cleanPath}`;
 };
 
 function formatUptime(seconds: number) {

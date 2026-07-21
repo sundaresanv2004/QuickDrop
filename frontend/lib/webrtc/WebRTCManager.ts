@@ -298,7 +298,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       this.wsReconnectTimeout = setTimeout(() => this.connectWs(), 2500);
     };
 
-    this.ws.onerror = (e) => console.error("WS Error", e);
+    this.ws.onerror = (e) => console.warn("[WS] Connection error (will auto-reconnect):", e);
   }
 
   private sendWsMessage(msg: object) {

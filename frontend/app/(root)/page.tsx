@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
+import type { Peer } from "@/types/messages"
 import { useRouter } from "next/navigation"
 import { useWebRTC } from "@/context/WebRTCContext"
 import { getDeviceIcon } from "@/components/discovery/PeerBubble"
@@ -71,6 +72,34 @@ export default function DiscoveryPage() {
     myDeviceType
   } = useWebRTC()
 
+  // Track peers that are animating out so we can show an exit animation
+  const prevPeersRef = useRef<Peer[]>([])
+  const [leavingPeers, setLeavingPeers] = useState<Peer[]>([])
+
+  useEffect(() => {
+    const currentIds = new Set(peers.map(p => p.device_id))
+    const departed = prevPeersRef.current.filter(p => !currentIds.has(p.device_id))
+
+    if (departed.length > 0) {
+      setLeavingPeers(prev => [
+        // Remove any already-leaving duplicate before adding fresh ones
+        ...prev.filter(p => !departed.find(d => d.device_id === p.device_id)),
+        ...departed
+      ])
+      const timer = setTimeout(() => {
+        setLeavingPeers(prev =>
+          prev.filter(p => !departed.find(d => d.device_id === p.device_id))
+        )
+      }, 400)
+      return () => clearTimeout(timer)
+    }
+    prevPeersRef.current = peers
+  }, [peers])
+
+  useEffect(() => {
+    prevPeersRef.current = peers
+  }, [peers])
+
   const [isEditingName, setIsEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState("")
 
@@ -127,21 +156,37 @@ export default function DiscoveryPage() {
 
       {/* Peer area */}
       <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-hidden">
-        {peers.filter(p => !p.is_busy).length === 0 ? (
+        {peers.filter(p => !p.is_busy).length === 0 && leavingPeers.length === 0 ? (
           <EmptyState />
         ) : (
-          peers.filter(p => !p.is_busy).map((peer, i) => (
-            <div
-              key={peer.device_id}
-              className={`animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}
-            >
-              <PeerBubble
-                peer={peer}
-                onClick={handlePeerClick}
-                disabled={connectionStatus !== "idle"}
-              />
-            </div>
-          ))
+          <>
+            {/* Active peers — animate in */}
+            {peers.filter(p => !p.is_busy).map((peer, i) => (
+              <div
+                key={peer.device_id}
+                className={`animate-in fade-in zoom-in-75 duration-500 fill-mode-both ${["requesting", "receiving"].includes(connectionStatus) ? "opacity-40 blur-[2px]" : ""}`}
+              >
+                <PeerBubble
+                  peer={peer}
+                  onClick={handlePeerClick}
+                  disabled={connectionStatus !== "idle"}
+                />
+              </div>
+            ))}
+            {/* Leaving peers — animate out */}
+            {leavingPeers.map((peer) => (
+              <div
+                key={`leaving-${peer.device_id}`}
+                className="animate-out fade-out zoom-out-75 duration-400 fill-mode-both pointer-events-none"
+              >
+                <PeerBubble
+                  peer={peer}
+                  onClick={() => {}}
+                  disabled={true}
+                />
+              </div>
+            ))}
+          </>
         )}
       </div>
 

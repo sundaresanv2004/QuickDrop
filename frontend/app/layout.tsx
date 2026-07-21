@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next"
-import { Geist_Mono, Nunito_Sans } from "next/font/google"
+import { Geist_Mono, Nunito_Sans, Outfit, Roboto } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
 import { WebRTCProvider } from "@/context/WebRTCContext";
 
-const nunitoSans = Nunito_Sans({ subsets: ['latin'], variable: '--font-sans' })
+const outfit = Outfit({subsets:['latin'],variable:'--font-sans'})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -14,6 +14,8 @@ const fontMono = Geist_Mono({
 })
 
 import { Toaster } from "@/components/ui/sonner"
+
+const robotoHeading = Roboto({subsets:['latin'],variable:'--font-heading'});
 
 export const metadata: Metadata = {
   title: "QuickDrop",
@@ -42,7 +44,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", nunitoSans.variable)}
+      className={cn("antialiased", fontMono.variable, "font-sans", outfit.variable, robotoHeading.variable)}
     >
       <body>
         <WebRTCProvider>

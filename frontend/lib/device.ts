@@ -65,8 +65,20 @@ export function generateFullRandomName(): string {
 export function getDeviceType(): string {
   if (typeof navigator === "undefined") return "unknown";
   const ua = navigator.userAgent;
-  if (ua.includes("iPhone") || ua.includes("Android") && ua.includes("Mobile")) return "mobile";
-  if (ua.includes("iPad") || ua.includes("Android") && !ua.includes("Mobile")) return "tablet";
+
+  // iPadOS 13+ deliberately reports as "Mac" to get desktop sites.
+  // Detect it by checking touch capability alongside the Mac user agent.
+  const isIPadOS = ua.includes("Mac") && navigator.maxTouchPoints > 1;
+  if (ua.includes("iPad") || isIPadOS) return "tablet";
+
+  // Android tablet: Android UA without "Mobile"
+  if (ua.includes("Android") && !ua.includes("Mobile")) return "tablet";
+
+  // Mobile phones (wrap Android check in its own parens to fix operator precedence)
+  if (ua.includes("iPhone") || (ua.includes("Android") && ua.includes("Mobile"))) return "mobile";
+
+  // Desktop: Mac, Windows, Linux
   if (ua.includes("Mac") || ua.includes("Windows") || ua.includes("Linux")) return "desktop";
+
   return "unknown";
 }

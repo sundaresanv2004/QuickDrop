@@ -28,6 +28,13 @@ export default function ChatPage() {
 
   // Ref to track if we already cleaned up via handleLeave
   const hasCleanedUp = useRef(false)
+  // Freeze the peerId at mount so stale closures in cleanup effects
+  // never accidentally reset a newer session.
+  const frozenPeerId = useRef(peerId)
+  // Cache the peer name so it never reverts to 'Unknown Device'
+  // when the peer is removed from the list on disconnect.
+  const cachedPeerName = useRef<string>("Unknown Device")
+  const cachedPeerType = useRef<string>("unknown")
 
   // ─── Guard: redirect if no active connection ───
   useEffect(() => {
@@ -75,17 +82,12 @@ export default function ChatPage() {
 
   // ─── Phase 6: Session Management ───
   useEffect(() => {
-    // Mark this peer session as "active" in the Context.
-    // This tells the Context to ignore cleanup requests for other IDs.
-    setActiveChatPeerId(peerId);
+    setActiveChatPeerId(frozenPeerId.current);
 
     return () => {
-      // When leaving, we tell the Context which session we are ending.
-      // If a newer mount has already updated activeChatPeerId, 
-      // this cleanup (from the stale mount) will do nothing.
-      resetConnection(peerId);
+      resetConnection(frozenPeerId.current);
     };
-  }, [peerId, setActiveChatPeerId, resetConnection]);
+  }, [setActiveChatPeerId, resetConnection]);
 
   const handleBeforeUnload = () => {
     sendSystemMessage({ type: "bye" })
@@ -99,8 +101,11 @@ export default function ChatPage() {
   }, [sendSystemMessage])
 
   const peer = peers.find(p => p.device_id === peerId)
-  const peerName = peer?.device_name ?? "Unknown Device"
-  const peerType = peer?.device_type ?? "unknown"
+  // Update the cache whenever the peer is visible in the list
+  if (peer?.device_name) cachedPeerName.current = peer.device_name
+  if (peer?.device_type) cachedPeerType.current = peer.device_type
+  const peerName = cachedPeerName.current
+  const peerType = cachedPeerType.current
 
   const isChannelOpen = chatChannelOpen && connectionStatus === "connected"
 

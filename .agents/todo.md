@@ -50,12 +50,12 @@ This file tracks what currently exists in the project, what needs to be improved
 - [x] **Rate limiting:** Prevent abuse by limiting WebSocket connections and `connect_request` messages per IP.
 
 ### Frontend — Discovery
-- [ ] **Device type detection:** Improve accuracy of detecting device type (mobile, tablet, desktop, laptop) from the user agent.
-- [ ] **Empty state UX:** Improve the empty state shown when no peers are found (clearer messaging, animation).
-- [ ] **Peer bubble animations:** Refine the "device appears" animation when a new peer joins.
+- [x] **Device type detection:** Improve accuracy of detecting device type (mobile, tablet, desktop, laptop) from the user agent.
+- [x] **Empty state UX:** Improve the empty state shown when no peers are found (clearer messaging, animation).
+- [x] **Peer bubble animations:** Refine the "device appears" animation when a new peer joins.
 
 ### Frontend — Handshake
-- [ ] **Verification code display:** Show a matching 4-digit code on both devices during the request/accept flow so users can visually confirm they are connecting to the right device.
+- [x] **Accept / Reject consent flow:** The incoming request modal IS the verification step. Device B must explicitly accept before any connection is established. No codes needed — consent is the security boundary.
 
 ### Frontend — Chat
 - [ ] **Link previews:** Implement unfurling of URLs shared in chat messages.

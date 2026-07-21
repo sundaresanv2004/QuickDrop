@@ -281,7 +281,15 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       this.sendWsMessage({ type: "register", device_name: this.myDeviceName, device_type: this.myDeviceType });
     };
 
-    this.ws.onmessage = (event) => this.handleWsMessage(JSON.parse(event.data));
+    this.ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      // Respond to server heartbeat pings immediately, before any other processing
+      if (msg.type === 'ping') {
+        this.sendWsMessage({ type: 'pong' });
+        return;
+      }
+      this.handleWsMessage(msg);
+    };
 
     this.ws.onclose = () => {
       this.ws = null;

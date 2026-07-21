@@ -15,10 +15,10 @@ export default function IncomingRequestModal() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) rejectRequest() }}>
-      <DialogContent showCloseButton={false} className="max-w-[340px] p-6 gap-0">
+      <DialogContent showCloseButton={false} className="p-6 gap-0">
         <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-             <HugeiconsIcon icon={Wifi01Icon} className="w-8 h-8 text-primary" />
+            <HugeiconsIcon icon={Wifi01Icon} className="w-8 h-8 text-primary" />
           </div>
           <DialogTitle className="text-xl font-bold text-foreground">Incoming Request</DialogTitle>
           <p className="text-balance text-muted-foreground/80 pt-2 text-sm">
@@ -27,16 +27,16 @@ export default function IncomingRequestModal() {
         </div>
 
         <div className="flex flex-row gap-3 mt-8">
-          <Button 
-            variant="outline" 
-            onClick={rejectRequest} 
+          <Button
+            variant="outline"
+            onClick={rejectRequest}
             className="flex-1 rounded-full h-11 transition-colors hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 border-muted-foreground/20"
           >
             Decline
           </Button>
-          <Button 
-            onClick={acceptRequest} 
-            className="flex-1 rounded-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+          <Button
+            onClick={acceptRequest}
+            className="flex-1 rounded-full h-11"
           >
             Accept
           </Button>

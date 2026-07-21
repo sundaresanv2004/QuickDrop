@@ -141,14 +141,12 @@ export default function MessageBubble({ message, isLastInGroup = true, peerName 
       <ContextMenuTrigger asChild>
         <div className={cn("group/msg w-full animate-in fade-in slide-in-from-bottom-1 duration-300", isSent ? "mb-1" : "mb-1")}>
           <Message align={msgAlign}>
-            {/* Avatar — only show on last-in-group */}
-            {isLastInGroup && (
-              <MessageAvatar>
-                <Avatar className="size-8">
-                  <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
-                </Avatar>
-              </MessageAvatar>
-            )}
+            {/* Avatar container always present for alignment, but visually hidden if not last in group */}
+            <MessageAvatar className={cn(!isLastInGroup && "opacity-0 invisible pointer-events-none")}>
+              <Avatar className="size-8">
+                <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
+              </Avatar>
+            </MessageAvatar>
 
             <MessageContent>
               <div className={cn("flex items-center gap-1", isSent ? "justify-end" : "justify-start")}>

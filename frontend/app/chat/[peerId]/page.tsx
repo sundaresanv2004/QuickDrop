@@ -6,6 +6,7 @@ import { useWebRTC } from "@/context/WebRTCContext"
 import ChatHeader from "@/components/chat/ChatHeader"
 import MessageList from "@/components/chat/MessageList"
 import MessageInput from "@/components/chat/MessageInput"
+import TypingIndicator from "@/components/chat/TypingIndicator"
 import DisconnectBanner from "@/components/chat/DisconnectBanner"
 
 export default function ChatPage() {
@@ -145,12 +146,15 @@ export default function ChatPage() {
         onLeave={handleLeave}
       />
 
-      <DisconnectBanner 
+      <DisconnectBanner
         connectionStatus={connectionStatus}
+        peerName={peerName}
         onGoBack={handleLeave}
       />
 
-      <MessageList messages={messages} isTyping={isTyping} peerName={peerName} />
+      <MessageList messages={messages} peerName={peerName} />
+
+      <TypingIndicator isTyping={isTyping} peerName={peerName} />
 
       <MessageInput
         onSendMessage={handleSendMessage}

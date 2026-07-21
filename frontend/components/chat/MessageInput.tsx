@@ -93,25 +93,25 @@ export default function MessageInput({
             <HugeiconsIcon icon={AttachmentIcon} className="w-5 h-5 sm:w-5.5 sm:h-5.5 -rotate-45" color="currentColor" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="mb-2 min-w-[200px] rounded-2xl bg-popover/90 backdrop-blur-xl border-border/50 shadow-2xl p-1.5">
+        <DropdownMenuContent align="start" side="top" className="mb-2 min-w-[200px] rounded-3xl bg-popover/90 backdrop-blur-xl border-border/50 shadow-2xl p-2">
           <DropdownMenuItem 
-            className="flex items-center gap-3 p-2.5 cursor-pointer focus:bg-accent/50 rounded-xl transition-colors"
+            className="flex items-center gap-3 p-1.5 cursor-pointer focus:bg-accent/50 rounded-full transition-colors"
             onClick={() => fileInputRef.current?.click()}
           >
-            <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
-              <HugeiconsIcon icon={File01Icon} size={20} strokeWidth={2.5} />
+            <div className="w-9 h-9 shrink-0 rounded-full bg-blue-500 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
+              <HugeiconsIcon icon={File01Icon} size={18} strokeWidth={2.5} color="white" />
             </div>
-            <span className="font-medium text-foreground/80">File</span>
+            <span className="font-medium text-foreground pr-4 whitespace-nowrap">File</span>
           </DropdownMenuItem>
 
           <DropdownMenuItem 
-            className="flex items-center gap-3 p-2.5 cursor-pointer focus:bg-accent/50 rounded-xl transition-colors"
+            className="flex items-center gap-3 p-1.5 cursor-pointer focus:bg-accent/50 rounded-full transition-colors"
             onClick={() => mediaInputRef.current?.click()}
           >
-            <div className="w-9 h-9 rounded-xl bg-sky-400 flex items-center justify-center text-white shadow-sm shadow-sky-400/20">
-              <HugeiconsIcon icon={Image01Icon} size={20} strokeWidth={2.5} />
+            <div className="w-9 h-9 shrink-0 rounded-full bg-sky-400 flex items-center justify-center text-white shadow-sm shadow-sky-400/20">
+              <HugeiconsIcon icon={Image01Icon} size={18} strokeWidth={2.5} color="white" />
             </div>
-            <span className="font-medium text-foreground/80">Photos and videos</span>
+            <span className="font-medium text-foreground pr-4 whitespace-nowrap">Photos and videos</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

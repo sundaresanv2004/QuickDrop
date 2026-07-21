@@ -160,13 +160,11 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
       <ContextMenuTrigger asChild>
         <div className="group/msg relative mb-2 w-full animate-in fade-in slide-in-from-bottom-1 duration-300">
           <Message align={msgAlign} className="w-full">
-            {isLastInGroup && (
-              <MessageAvatar>
-                <Avatar className="size-8">
-                  <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
-                </Avatar>
-              </MessageAvatar>
-            )}
+            <MessageAvatar className={cn(!isLastInGroup && "opacity-0 invisible pointer-events-none")}>
+              <Avatar className="size-8">
+                <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
+              </Avatar>
+            </MessageAvatar>
             <MessageContent>
               <div className={cn("flex items-center gap-1 w-full", isSent ? "justify-end" : "justify-start")}>
                 {isSent && <EmojiPicker align="end" />}

@@ -17,7 +17,6 @@ import { Marker, MarkerContent } from "@/components/ui/marker"
 
 interface MessageListProps {
   messages: ChatMessage[]
-  isTyping: boolean
   peerName: string
 }
 
@@ -42,7 +41,7 @@ function formatDateLabel(timestamp: number): string {
   })
 }
 
-export default function MessageList({ messages, isTyping, peerName }: MessageListProps) {
+export default function MessageList({ messages, peerName }: MessageListProps) {
   if (messages.length === 0) {
     return <EmptyChat />
   }
@@ -84,12 +83,6 @@ export default function MessageList({ messages, isTyping, peerName }: MessageLis
                   </MessageScrollerItem>
                 )
               })}
-              
-              {isTyping && (
-                <div className="mt-2">
-                  <TypingIndicator isTyping={isTyping} peerName={peerName} />
-                </div>
-              )}
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton direction="end" />

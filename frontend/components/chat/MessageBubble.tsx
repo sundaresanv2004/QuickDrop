@@ -1,3 +1,5 @@
+"use client"
+
 import { ChatMessage, LinkPreview } from "@/types/chat"
 import LinkEmbed from "./LinkEmbed"
 import { cn, formatTimestamp } from "@/lib/utils"
@@ -5,7 +7,7 @@ import { useWebRTC } from "@/context/WebRTCContext"
 import { useWebRTCBridge } from "@/hooks/useWebRTCBridge"
 import { useState, useEffect } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { SmileIcon, TickDouble01Icon, Copy01Icon, Link01Icon } from "@hugeicons/core-free-icons"
+import { SmileIcon, Copy01Icon, Link01Icon } from "@hugeicons/core-free-icons"
 import {
   Popover,
   PopoverContent,
@@ -15,20 +17,21 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { toast } from "sonner"
 import ReactionBadge from "./ReactionBadge"
+import { Message, MessageContent, MessageFooter, MessageAvatar } from "@/components/ui/message"
+import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 interface MessageBubbleProps {
   message: ChatMessage
   isLastInGroup?: boolean
+  peerName: string
 }
 
-export default function MessageBubble({ message, isLastInGroup = true }: MessageBubbleProps) {
+export default function MessageBubble({ message, isLastInGroup = true, peerName }: MessageBubbleProps) {
   const { sendReaction, myDeviceId } = useWebRTC()
   const [showPicker, setShowPicker] = useState(false)
 
@@ -36,6 +39,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
 
   const isSent = message.direction === "sent"
   const reactions = message.reactions || {}
+  const hasReactions = Object.keys(reactions).length > 0
 
   const emojis = ["👍", "❤️", "😂", "😅", "🙏", "🎉", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯"]
 
@@ -52,11 +56,11 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
         </button>
       </PopoverTrigger>
       <PopoverContent
-        side="bottom"
+        side="top"
         align={align}
         collisionPadding={16}
-        sideOffset={8}
-        className="w-[210px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-200"
+        sideOffset={6}
+        className="w-[220px] px-1 py-0.5 rounded-full bg-popover/90 backdrop-blur-xl border-border/50 shadow-xl animate-in zoom-in-95 duration-150"
       >
         <div className="flex flex-row gap-0.5 overflow-x-auto scrollbar-hide py-2 px-1">
           {emojis.map(emoji => (
@@ -81,7 +85,6 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   // Retroactive link preview fetch
   useEffect(() => {
     if (message.type !== "text" || message.linkPreview || !message.content) return
-
     const urlRegex = /(https?:\/\/[^\s]+)/g
     const match = message.content.match(urlRegex)
     if (match && match[0]) {
@@ -91,12 +94,8 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
           const cacheKey = `preview_cache_${url}`
           try {
             const cached = sessionStorage.getItem(cacheKey)
-            if (cached) {
-              updateMessage(message.id, { linkPreview: JSON.parse(cached) })
-              return
-            }
+            if (cached) { updateMessage(message.id, { linkPreview: JSON.parse(cached) }); return }
           } catch(e) {}
-
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
           const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
           if (res.ok) {
@@ -106,9 +105,7 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
               updateMessage(message.id, { linkPreview: data })
             }
           }
-        } catch (err) {
-          console.error("[LinkPreview] Retroactive fetch failed:", err)
-        }
+        } catch (err) { console.error("[LinkPreview] Retroactive fetch failed:", err) }
       }
       fetchPreview()
     }
@@ -117,25 +114,16 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
   const LinkifiedText = ({ text }: { text: string }) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g
     const parts = text.split(urlRegex)
-
     return (
       <>
         {parts.map((part, i) => {
           if (part.match(urlRegex)) {
             return (
-              <a
-                key={i}
-                href={part}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  "underline underline-offset-4 font-semibold transition-opacity hover:opacity-70 break-all",
-                  isSent ? "text-primary-foreground" : "text-primary"
-                )}
+              <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+                className={cn("underline underline-offset-4 font-semibold transition-opacity hover:opacity-70 break-all",
+                  isSent ? "text-primary-foreground/90" : "text-primary")}
                 onClick={(e) => e.stopPropagation()}
-              >
-                {part}
-              </a>
+              >{part}</a>
             )
           }
           return <span key={i}>{part}</span>
@@ -144,130 +132,97 @@ export default function MessageBubble({ message, isLastInGroup = true }: Message
     )
   }
 
+  const msgAlign = isSent ? "end" : "start"
+  const senderName = isSent ? "Me" : peerName
+  const initials = senderName.charAt(0).toUpperCase()
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div
-          className={cn(
-            "flex w-full mb-1 group/msg relative animate-in fade-in slide-in-from-bottom-1 duration-300",
-            isSent ? "justify-end" : "justify-start"
-          )}
-        >
-          <div className={cn(
-            "flex flex-col max-w-[85%] sm:max-w-[75%]",
-            isSent ? "items-end" : "items-start"
-          )}>
-            <div className="flex items-center gap-1 w-full">
-              {/* Reaction trigger is on the opposite side of the bubble */}
-              {isSent && <EmojiPicker align="end" />}
+        <div className={cn("group/msg w-full animate-in fade-in slide-in-from-bottom-1 duration-300", isSent ? "mb-1" : "mb-1")}>
+          <Message align={msgAlign}>
+            {/* Avatar — only show on last-in-group */}
+            {isLastInGroup && (
+              <MessageAvatar>
+                <Avatar className="size-8">
+                  <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
+                </Avatar>
+              </MessageAvatar>
+            )}
 
-              <div
-                className={cn(
-                  "px-3 py-2 flex flex-col gap-0.5 select-none transition-transform flex-1 min-w-0 shadow-sm",
-                  isSent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-                  isSent
-                    ? cn("rounded-2xl", isLastInGroup ? "rounded-br-sm" : "")
-                    : cn("rounded-2xl", isLastInGroup ? "rounded-bl-sm" : "")
-                )}
-              >
-                {message.linkPreview && <LinkEmbed preview={message.linkPreview} isSent={isSent} />}
-                <p className="text-sm border-none leading-relaxed whitespace-pre-wrap break-words min-w-[60px]">
-                  <LinkifiedText text={message.content || ""} />
-                </p>
-                <div className={cn("flex items-center gap-1 mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
-                  <span className={cn("text-[9px] select-none whitespace-nowrap font-medium", isSent ? "text-primary-foreground" : "text-muted-foreground")}>
+            <MessageContent>
+              <div className={cn("flex items-center gap-1", isSent ? "justify-end" : "justify-start")}>
+                {isSent && <EmojiPicker align="end" />}
+
+                <Bubble
+                  variant={isSent ? "default" : "muted"}
+                  align={msgAlign}
+                  className={cn(hasReactions && "mb-5")}
+                >
+                  <BubbleContent className={cn(
+                    "text-sm leading-relaxed whitespace-pre-wrap break-words",
+                    isSent ? "text-primary-foreground" : "text-foreground"
+                  )}>
+                    {message.linkPreview && <LinkEmbed preview={message.linkPreview} isSent={isSent} />}
+                    <LinkifiedText text={message.content || ""} />
+                  </BubbleContent>
+
+                  {hasReactions && (
+                    <BubbleReactions side="bottom" align={isSent ? "start" : "end"}>
+                      {Object.entries(reactions).map(([emoji, userIds]) => (
+                        <ReactionBadge
+                          key={emoji}
+                          emoji={emoji}
+                          userIds={userIds as string[]}
+                          myDeviceId={myDeviceId}
+                          onClick={handleReaction}
+                        />
+                      ))}
+                    </BubbleReactions>
+                  )}
+                </Bubble>
+
+                {!isSent && <EmojiPicker align="start" />}
+              </div>
+
+              {/* Time shown only on the last message in a group */}
+              {isLastInGroup && (
+                <MessageFooter className={cn("gap-1", isSent ? "justify-end pr-1" : "justify-start pl-1")}>
+                  <span className="text-[10px] text-muted-foreground select-none tabular-nums">
                     {formatTimestamp(message.timestamp)}
                   </span>
-                  {isSent && (
-                    <HugeiconsIcon
-                      icon={TickDouble01Icon}
-                      size={12}
-                      className={cn("opacity-70", isSent ? "text-primary-foreground" : "text-muted-foreground")}
-                    />
-                  )}
-                </div>
-              </div>
+                </MessageFooter>
+              )}
+            </MessageContent>
 
-              {!isSent && <EmojiPicker align="start" />}
-            </div>
-
-            {/* Reaction Display */}
-            {Object.keys(reactions).length > 0 && (
-              <div className={cn(
-                "flex flex-wrap gap-1 mt-1.5 px-1",
-                isSent ? "justify-end" : "justify-start"
-              )}>
-                {Object.entries(reactions).map(([emoji, userIds]) => (
-                  <ReactionBadge
-                    key={emoji}
-                    emoji={emoji}
-                    userIds={userIds}
-                    myDeviceId={myDeviceId}
-                    onClick={handleReaction}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          </Message>
         </div>
       </ContextMenuTrigger>
 
       <ContextMenuContent className="w-56 rounded-2xl overflow-hidden" collisionPadding={16}>
-        {/* Inline Mobile-Safe Emoji Row */}
-        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full relative">
+        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full">
           {emojis.map(emoji => (
-            <ContextMenuItem
-              key={emoji}
-              onClick={() => handleReaction(emoji)}
+            <ContextMenuItem key={emoji} onClick={() => handleReaction(emoji)}
               className={cn(
                 "w-9 h-9 flex items-center justify-center text-xl rounded-full hover:bg-accent transition-all transform hover:scale-125 active:scale-90 shrink-0 p-0 focus:bg-accent cursor-pointer",
                 myDeviceId && reactions[emoji]?.includes(myDeviceId) ? "bg-accent" : ""
               )}
-            >
-              {emoji}
-            </ContextMenuItem>
+            >{emoji}</ContextMenuItem>
           ))}
         </div>
 
-        {message.content?.match(/(https?:\/\/[^\s]+)/) && (
+        {message.content?.match(/(https?:\/\/[^\s]+)/) ? (
           <>
-            <ContextMenuItem
-              onClick={() => {
-                const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
-                if (url) window.open(url, "_blank")
-              }}
-              className="gap-3 mt-1"
-            >
-              <HugeiconsIcon icon={Link01Icon} size={18} />
-              <span>Open Link</span>
+            <ContextMenuItem onClick={() => { const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]; if (url) window.open(url, "_blank") }} className="gap-3 mt-1 cursor-pointer">
+              <HugeiconsIcon icon={Link01Icon} size={18} /><span>Open Link</span>
             </ContextMenuItem>
-
-            <ContextMenuItem
-              onClick={() => {
-                const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]
-                if (url) {
-                  navigator.clipboard.writeText(url)
-                  toast.success("Link copied")
-                }
-              }}
-              className="gap-3"
-            >
-              <HugeiconsIcon icon={Copy01Icon} size={18} />
-              <span>Copy Link</span>
+            <ContextMenuItem onClick={() => { const url = message.content?.match(/(https?:\/\/[^\s]+)/)?.[0]; if (url) { navigator.clipboard.writeText(url); toast.success("Link copied") } }} className="gap-3 cursor-pointer">
+              <HugeiconsIcon icon={Copy01Icon} size={18} /><span>Copy Link</span>
             </ContextMenuItem>
           </>
-        )}
-
-        {!message.content?.match(/(https?:\/\/[^\s]+)/) && (
-          <ContextMenuItem
-            onClick={() => {
-              navigator.clipboard.writeText(message.content || "")
-              toast.success("Text copied")
-            }}
-            className="gap-3 mt-1"
-          >
-            <HugeiconsIcon icon={Copy01Icon} size={18} />
-            <span>Copy Text</span>
+        ) : (
+          <ContextMenuItem onClick={() => { navigator.clipboard.writeText(message.content || ""); toast.success("Text copied") }} className="gap-3 mt-1 cursor-pointer">
+            <HugeiconsIcon icon={Copy01Icon} size={18} /><span>Copy Text</span>
           </ContextMenuItem>
         )}
       </ContextMenuContent>

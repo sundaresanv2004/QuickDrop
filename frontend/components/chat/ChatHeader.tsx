@@ -1,10 +1,10 @@
 "use client"
 
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowLeft01Icon, ComputerIcon, SmartPhone01Icon, Tablet01Icon } from "@hugeicons/core-free-icons"
+import { ArrowLeft01Icon, Locker01Icon } from "@hugeicons/core-free-icons"
 import { getDeviceIcon } from "@/components/discovery/PeerBubble"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import SetTheme from "@/components/shared/setTheme"
 import { cn } from "@/lib/utils"
 import type { ConnectionStatus } from "@/context/WebRTCContext"
@@ -16,89 +16,79 @@ interface ChatHeaderProps {
   onLeave: () => void
 }
 
-const statusConfig = {
-  connected: {
-    label:    "Live",
-    dotClass: "bg-emerald-500 animate-pulse",
-    variant:  "success" as const,
-  },
-  connecting: {
-    label:    "Connecting",
-    dotClass: "bg-amber-500 animate-pulse",
-    variant:  "warning" as const,
-  },
-  disconnected: {
-    label:    "Offline",
-    dotClass: "bg-red-500",
-    variant:  "destructive" as const,
-  },
-  rejected: {
-    label:    "Rejected",
-    dotClass: "bg-red-500",
-    variant:  "destructive" as const,
-  },
-  left: {
-    label:    "Offline",
-    dotClass: "bg-muted-foreground",
-    variant:  "secondary" as const,
-  },
-  idle: {
-    label:    "Idle",
-    dotClass: "bg-muted-foreground",
-    variant:  "secondary" as const,
-  },
-  requesting: {
-    label:    "Requesting",
-    dotClass: "bg-amber-500 animate-pulse",
-    variant:  "warning" as const,
-  },
-  receiving: {
-    label:    "Incoming",
-    dotClass: "bg-sky-500 animate-pulse",
-    variant:  "info" as const,
-  },
+const statusConfig: Record<ConnectionStatus, { label: string; color: string; pulse: boolean }> = {
+  connected:    { label: "End-to-end encrypted",      color: "bg-emerald-500", pulse: true  },
+  connecting:   { label: "Connecting...",              color: "bg-amber-500",   pulse: true  },
+  disconnected: { label: "Connection lost",            color: "bg-red-500",     pulse: false },
+  rejected:     { label: "Connection rejected",        color: "bg-red-500",     pulse: false },
+  left:         { label: "Peer left the chat",         color: "bg-zinc-400",    pulse: false },
+  idle:         { label: "Idle",                       color: "bg-zinc-400",    pulse: false },
+  requesting:   { label: "Awaiting response...",       color: "bg-amber-500",   pulse: true  },
+  receiving:    { label: "Incoming request",           color: "bg-sky-500",     pulse: true  },
 }
 
 export default function ChatHeader({ peerName, peerType, connectionStatus, onLeave }: ChatHeaderProps) {
   const config = statusConfig[connectionStatus] ?? statusConfig.idle
+  const initials = peerName.slice(0, 2).toUpperCase()
+  const isConnected = connectionStatus === "connected"
 
   return (
-    <header className="flex items-center justify-between px-4 py-3 border-b bg-background sticky top-0 z-10 w-full">
-      <Button variant="ghost" size="icon" onClick={onLeave}>
+    <header className="flex items-center gap-3 px-3 py-2.5 border-b bg-background/95 backdrop-blur-md sticky top-0 z-20 w-full">
+      {/* Back button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onLeave}
+        className="size-9 rounded-full shrink-0 text-muted-foreground hover:text-foreground"
+      >
         <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color="currentColor" />
       </Button>
 
-      <div className="flex flex-col items-center">
-        <div className="flex items-center gap-1.5">
-          <HugeiconsIcon icon={getDeviceIcon(peerName, peerType)} size={16} className="text-muted-foreground/50" />
-          <span className="font-semibold text-sm max-w-[120px] sm:max-w-none truncate">{peerName}</span>
+      {/* Peer avatar + info */}
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        {/* Avatar with status dot */}
+        <div className="relative shrink-0">
+          <Avatar className="size-9">
+            <AvatarFallback className="text-xs font-bold bg-primary text-primary-foreground">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          {/* Live status dot */}
+          <span className={cn(
+            "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-background",
+            config.color,
+            config.pulse && "animate-pulse"
+          )} />
         </div>
-        <span className="text-[10px] text-muted-foreground leading-tight">
-          {connectionStatus === "connected"
-            ? "End-to-end encrypted"
-            : connectionStatus === "connecting"
-            ? "Establishing connection..."
-            : connectionStatus === "left"
-            ? "Peer left the chat"
-            : "Connection lost"}
-        </span>
+
+        {/* Name + status */}
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5">
+            <HugeiconsIcon
+              icon={getDeviceIcon(peerName, peerType)}
+              size={13}
+              className="text-muted-foreground shrink-0"
+            />
+            <span className="font-semibold text-sm truncate leading-tight">{peerName}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {isConnected && (
+              <HugeiconsIcon icon={Locker01Icon} size={9} className="text-emerald-500 shrink-0" />
+            )}
+            <span className={cn(
+              "text-[10px] leading-tight truncate",
+              isConnected ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+            )}>
+              {config.label}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-1.5">
-          <span className={cn(
-            "w-1.5 h-1.5 rounded-full flex-shrink-0",
-            config.dotClass
-          )} />
-          <Badge variant={config.variant} className="text-[10px] px-1.5 py-0 font-medium">
-            {config.label}
-          </Badge>
-        </div>
-        <div className="-mr-2">
-          <SetTheme />
-        </div>
+      {/* Right actions */}
+      <div className="flex items-center shrink-0">
+        <SetTheme />
       </div>
     </header>
   )
 }
-

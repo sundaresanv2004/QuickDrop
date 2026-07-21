@@ -80,7 +80,7 @@ export default function MessageInput({
   }
 
   return (
-    <div className="flex items-end gap-2 px-3 sm:px-4 py-3 border-t bg-background sticky bottom-0">
+    <div className="flex items-center gap-2 px-3 sm:px-4 py-3 border-t bg-background">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -160,92 +160,58 @@ export default function MessageInput({
             const url = match[0]
             if (!fetchedUrls.current.has(url)) {
               if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
-              
               previewTimerRef.current = setTimeout(async () => {
-                // Check cache first
                 const cacheKey = `preview_cache_${url}`
                 try {
                   const cached = sessionStorage.getItem(cacheKey)
-                  if (cached) {
-                    setPreview(JSON.parse(cached))
-                    fetchedUrls.current.add(url)
-                    return
-                  }
+                  if (cached) { setPreview(JSON.parse(cached)); fetchedUrls.current.add(url); return }
                 } catch(e) {}
-
                 setLoadingPreview(true)
                 try {
                   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api"
                   const res = await fetch(`${apiUrl}/link-preview?url=${encodeURIComponent(url)}`)
-                  
-                  // Verification Check: Has the URL been removed while fetching?
                   if (res.ok) {
                     const data = await res.json()
-                    
-                    // Check again if the URL is still in the input
                     const currentText = (document.getElementById("message-input-area") as HTMLTextAreaElement)?.value || ""
                     if (currentText.includes(url)) {
-                      setPreview(data)
-                      fetchedUrls.current.add(url)
-                      try {
-                        sessionStorage.setItem(cacheKey, JSON.stringify(data))
-                      } catch(e) {}
-                    } else {
-                      console.log("[LinkPreview] Input changed, discarding preview.")
+                      setPreview(data); fetchedUrls.current.add(url)
+                      try { sessionStorage.setItem(cacheKey, JSON.stringify(data)) } catch(e) {}
                     }
-                  } else {
-                    console.error(`[LinkPreview] Backend returned ${res.status}: ${res.statusText}`)
                   }
                 } catch (err) {
                   console.error("[LinkPreview] Failed to fetch preview:", err)
-                } finally {
-                  setLoadingPreview(false)
-                }
+                } finally { setLoadingPreview(false) }
               }, 1000)
             }
           } else {
-            if (preview) {
-              setPreview(null)
-              fetchedUrls.current.clear()
-            }
+            if (preview) { setPreview(null); fetchedUrls.current.clear() }
           }
 
-          // Edge case 1: field is empty or only whitespace
           if (!newValue.trim()) {
             if (isTypingRef.current) {
               isTypingRef.current = false
-              if (typingTimerRef.current) {
-                clearTimeout(typingTimerRef.current)
-                typingTimerRef.current = null
-              }
+              if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); typingTimerRef.current = null }
               onTypingStop()
             }
             return
           }
 
-          // Send typing_start only once per burst
-          if (!isTypingRef.current) {
-            isTypingRef.current = true
-            onTypingStart()
-          }
-
-          // Reset the inactivity timer on every keystroke
-          if (typingTimerRef.current) {
-            clearTimeout(typingTimerRef.current)
-          }
+          if (!isTypingRef.current) { isTypingRef.current = true; onTypingStart() }
+          if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
           typingTimerRef.current = setTimeout(() => {
-            isTypingRef.current = false
-            typingTimerRef.current = null
-            onTypingStop()
+            isTypingRef.current = false; typingTimerRef.current = null; onTypingStop()
           }, 1500)
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={(e) => { 
+          if (e.key === "Enter" && !e.shiftKey) { 
+            e.preventDefault(); 
+            handleSend();
+          } 
+        }}
         disabled={disabled}
-        rows={1}
         id="message-input-area"
-        className="resize-none min-h-[40px] max-h-[120px] flex-1 text-base sm:text-sm"
-        inputMode="text"
-        enterKeyHint="send"
+        className="flex-1 min-h-[40px] max-h-[160px] resize-none text-base sm:text-sm rounded-3xl pt-2.5 pb-2.5 px-4"
+        rows={1}
       />
 
       {preview && (
@@ -277,11 +243,11 @@ export default function MessageInput({
       <Button
         variant="default"
         size="icon"
-        className="h-11 w-11 sm:h-9 sm:w-9"
+        className="size-10 rounded-full shrink-0"
         disabled={value.trim() === "" || disabled}
         onClick={handleSend}
       >
-        <HugeiconsIcon icon={SentIcon} className="w-5 h-5 sm:w-4.5 sm:h-4.5" color="currentColor" />
+        <HugeiconsIcon icon={SentIcon} size={18} color="currentColor" />
       </Button>
     </div>
   )

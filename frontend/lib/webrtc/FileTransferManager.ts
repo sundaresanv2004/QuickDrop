@@ -110,6 +110,11 @@ export class FileTransferManager {
 
   public async sendFile(file: File): Promise<string | undefined> {
     if (!this.fileChannel || this.fileChannel.readyState !== "open") return;
+    
+    if (file.size > 250 * 1024 * 1024) {
+      throw new Error("File exceeds 250MB limit");
+    }
+
     const fileId = crypto.randomUUID();
     this.senderFileQueue.push({ file, fileId });
     

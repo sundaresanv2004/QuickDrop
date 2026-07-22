@@ -11,15 +11,9 @@ import {
   Pdf01Icon,
   File01Icon,
   Download01Icon,
-  Loading03Icon,
   AlertCircleIcon,
   SmileIcon,
-  Tick01Icon,
-  TickDouble01Icon,
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons"
-import FileProgressBar from "./FileProgressBar"
 import { useWebRTC } from "@/context/WebRTCContext"
 import {
   Popover,
@@ -35,14 +29,17 @@ import {
 import ReactionBadge from "./ReactionBadge"
 import { Message, MessageContent, MessageFooter, MessageAvatar } from "@/components/ui/message"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { 
-  Attachment, 
-  AttachmentMedia, 
-  AttachmentContent, 
-  AttachmentTitle, 
-  AttachmentDescription, 
-  AttachmentActions, 
-  AttachmentAction 
+import { Bubble, BubbleReactions } from "@/components/ui/bubble"
+import { Spinner } from "@/components/ui/spinner"
+import {
+  Attachment,
+  AttachmentMedia,
+  AttachmentContent,
+  AttachmentTitle,
+  AttachmentDescription,
+  AttachmentActions,
+  AttachmentAction,
+  AttachmentTrigger,
 } from "@/components/ui/attachment"
 
 function getFileIconForMime(mimeType: string) {
@@ -53,6 +50,15 @@ function getFileIconForMime(mimeType: string) {
   return File01Icon
 }
 
+function getFileMimeLabel(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return mimeType.split("/")[1].toUpperCase()
+  if (mimeType.startsWith("video/")) return mimeType.split("/")[1].toUpperCase()
+  if (mimeType.startsWith("audio/")) return mimeType.split("/")[1].toUpperCase()
+  if (mimeType === "application/pdf") return "PDF"
+  if (mimeType === "application/zip") return "ZIP"
+  return mimeType.split("/")[1]?.toUpperCase() ?? "FILE"
+}
+
 interface FileBubbleProps {
   message: ChatMessage
   peerName: string
@@ -60,13 +66,15 @@ interface FileBubbleProps {
 }
 
 export default function FileBubble({ message, peerName, isLastInGroup }: FileBubbleProps) {
-  const { sendReaction, myDeviceId, acceptLargeFileStream, rejectFile } = useWebRTC()
+  const { sendReaction, myDeviceId } = useWebRTC()
   const [showPicker, setShowPicker] = useState(false)
 
   if (message.type !== "file" || !message.file) return null
 
   const file = message.file
   const isSent = message.direction === "sent"
+  const reactions = message.reactions || {}
+  const hasReactions = Object.keys(reactions).length > 0
 
   const handleDownload = async () => {
     let url = file.objectUrl
@@ -98,17 +106,20 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
     setShowPicker(false)
   }
 
-  const handleAcceptStream = async () => {
-    try {
-      // @ts-ignore
-      acceptLargeFileStream?.(file.fileId)
-    } catch (err: any) {
-      console.error("[FILES] Stream setup failed:", err)
-    }
-  }
-
-  const reactions = message.reactions || {}
   const emojis = ["👍", "❤️", "😂", "😅", "🙏", "🎉", "😮", "😢", "😡", "🙌", "🔥", "✨", "💯"]
+
+  // Map our transfer status to the Attachment state prop
+  let attachmentState: "idle" | "uploading" | "processing" | "error" | "done" = "idle"
+  if (file.status === "sending") attachmentState = "uploading"
+  else if (file.status === "receiving") attachmentState = "processing"
+  else if (file.status === "complete") attachmentState = "done"
+  else if (file.status === "error") attachmentState = "error"
+
+  const isInProgress = file.status === "sending" || file.status === "receiving"
+
+  const msgAlign = isSent ? "end" : "start"
+  const senderName = isSent ? "Me" : peerName
+  const initials = senderName.charAt(0).toUpperCase()
 
   const EmojiPicker = ({ align }: { align: "start" | "end" }) => (
     <Popover open={showPicker} onOpenChange={setShowPicker}>
@@ -142,92 +153,74 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
     </Popover>
   )
 
-  const isImage = file.mimeType.startsWith("image/")
-
-  let attachmentState: "idle" | "uploading" | "processing" | "done" | "error" = "idle"
-  if (file.status === "sending") attachmentState = "uploading"
-  if (file.status === "receiving") attachmentState = "processing"
-  if (file.status === "complete") attachmentState = "done"
-  if (file.status === "error") attachmentState = "error"
-
-  const msgAlign = isSent ? "end" : "start"
-  
-  const senderName = isSent ? "Me" : peerName
-  const initials = senderName.charAt(0).toUpperCase()
-
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="group/msg relative mb-2 w-full animate-in fade-in slide-in-from-bottom-1 duration-300">
+        <div className={cn("group/msg relative w-full animate-in fade-in slide-in-from-bottom-1 duration-300", hasReactions ? "mb-5" : "mb-2")}>
           <Message align={msgAlign} className="w-full">
             <MessageAvatar className={cn(!isLastInGroup && "opacity-0 invisible pointer-events-none")}>
               <Avatar className="size-8">
                 <AvatarFallback className={cn("text-xs font-semibold", isSent ? "bg-primary text-primary-foreground" : "bg-muted")}>{initials}</AvatarFallback>
               </Avatar>
             </MessageAvatar>
+
             <MessageContent>
               <div className={cn("flex items-center gap-1 w-full", isSent ? "justify-end" : "justify-start")}>
                 {isSent && <EmojiPicker align="end" />}
-                
-                <div className={cn("max-w-[85%] sm:max-w-[75%] flex flex-col items-end relative", Object.keys(reactions).length > 0 && "mb-4")}>
-                  <Attachment state={attachmentState} className="w-full sm:min-w-[280px]">
+
+                {/* Bubble wraps the Attachment to get BubbleReactions positioning */}
+                <Bubble
+                  variant="ghost"
+                  align={msgAlign}
+                  className={cn("max-w-[85%] sm:max-w-[75%]")}
+                >
+                  <Attachment
+                    state={attachmentState}
+                    className="w-full sm:min-w-[280px]"
+                  >
                     <AttachmentMedia variant="icon">
-                      <HugeiconsIcon icon={getFileIconForMime(file.mimeType)} size={24} />
+                      {/* Show Spinner during transfers; file-type icon otherwise */}
+                      {isInProgress
+                        ? <Spinner />
+                        : <HugeiconsIcon icon={getFileIconForMime(file.mimeType)} className="size-4" />
+                      }
                     </AttachmentMedia>
+
                     <AttachmentContent>
                       <AttachmentTitle>{file.name}</AttachmentTitle>
                       <AttachmentDescription>
-                        {formatFileSize(file.size)}
-                        {(file.status === "sending" || file.status === "receiving") && file.progress > 0 && ` · ${file.progress}%`}
+                        {getFileMimeLabel(file.mimeType)} · {formatFileSize(file.size)}
+                        {isInProgress && file.progress > 0 && ` · ${file.progress}%`}
+                        {file.status === "error" && ` · ${file.statusReason ?? "Failed"}`}
                       </AttachmentDescription>
                     </AttachmentContent>
-                    
-                    {file.status === "complete" && !file.streamingMode && (
+
+                    {/* Download action — only available once fully received */}
+                    {file.status === "complete" && (
                       <AttachmentActions>
-                        <AttachmentAction onClick={(e) => { e.stopPropagation(); handleDownload() }}>
-                          <HugeiconsIcon icon={Download01Icon} size={16} />
+                        <AttachmentAction
+                          aria-label={`Download ${file.name}`}
+                          onClick={(e) => { e.stopPropagation(); handleDownload() }}
+                        >
+                          <HugeiconsIcon icon={Download01Icon} className="size-4" />
                         </AttachmentAction>
                       </AttachmentActions>
                     )}
+
+                    {/* Full-card trigger for completed files so clicking anywhere downloads */}
+                    {file.status === "complete" && (
+                      <AttachmentTrigger asChild>
+                        <button
+                          aria-label={`Download ${file.name}`}
+                          onClick={(e) => { e.stopPropagation(); handleDownload() }}
+                        />
+                      </AttachmentTrigger>
+                    )}
                   </Attachment>
 
-                  {/* Progress Bar Override for finer control */}
-                  {(file.status === "sending" || file.status === "receiving") && file.progress > 0 && (
-                    <FileProgressBar progress={file.progress} className={cn("w-full mt-1.5 h-1")} />
-                  )}
-
-                  {/* Large File Action Row (Waiting for Approval) */}
-                  {!isSent && file.status === "receiving" && file.streamingMode && file.progress === 0 && (
-                    <div className="flex flex-col gap-2 pt-2 border-t mt-2 w-full px-2 pb-2">
-                      <p className="text-[10px] opacity-60 italic text-center leading-tight">
-                        Size: {formatFileSize(file.size)}. Start stream?
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          onClick={(e: React.MouseEvent) => {
-                            e.stopPropagation();
-                            rejectFile?.(file.fileId);
-                          }}
-                          variant="ghost"
-                          className="h-8 rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive text-[10px] font-bold min-w-[100px]"
-                        >
-                          <HugeiconsIcon icon={Cancel01Icon} size={12} className="mr-1" />
-                          DECLINE
-                        </Button>
-                        <Button
-                          onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleAcceptStream() }}
-                          variant="outline"
-                          className="h-8 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 text-[10px] font-bold min-w-[100px]"
-                        >
-                          <HugeiconsIcon icon={CheckmarkCircle02Icon} size={12} className="mr-1" />
-                          ACCEPT & SAVE
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {Object.keys(reactions).length > 0 && (
-                    <div className={cn("flex flex-wrap gap-1 mt-2 w-full", isSent ? "justify-start" : "justify-end")}>
+                  {/* Reactions cluster — anchored to the Bubble via BubbleReactions */}
+                  {hasReactions && (
+                    <BubbleReactions side="bottom" align={isSent ? "start" : "end"}>
                       {Object.entries(reactions).map(([emoji, userIds]) => (
                         <ReactionBadge
                           key={emoji}
@@ -237,50 +230,38 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
                           onClick={handleReaction}
                         />
                       ))}
-                    </div>
+                    </BubbleReactions>
                   )}
-                </div>
+                </Bubble>
 
                 {!isSent && <EmojiPicker align="start" />}
               </div>
-              
-              <MessageFooter className={cn("mt-1 opacity-70", isSent ? "justify-end" : "justify-start")}>
-                <span className="text-[9px] select-none whitespace-nowrap font-medium">
-                  {formatTimestamp(message.timestamp)}
-                </span>
-                
-                {isSent && (
-                  <div className="flex items-center ml-1">
-                    {file.status === "sending" && (
-                      <HugeiconsIcon icon={Tick01Icon} size={12} />
-                    )}
-                    {file.status === "complete" && (
-                      <HugeiconsIcon icon={TickDouble01Icon} size={13} />
-                    )}
-                    {file.status === "error" && (
-                      <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive saturate-150" />
-                    )}
-                  </div>
-                )}
-                
-                {!isSent && file.status === "complete" && !file.streamingMode && (
-                  <span className="text-[9px] font-bold uppercase tracking-tight ml-1">
-                    Ready to Download
+
+              {/* Timestamp + delivery receipt */}
+              {isLastInGroup && (
+                <MessageFooter className={cn("mt-1 gap-1 opacity-70", isSent ? "justify-end pr-1" : "justify-start pl-1")}>
+                  <span className="text-[10px] text-muted-foreground select-none tabular-nums">
+                    {formatTimestamp(message.timestamp)}
                   </span>
-                )}
-                {!isSent && file.status === "complete" && file.streamingMode && (
-                  <span className="text-[9px] font-bold uppercase tracking-tight ml-1">
-                    Saved to Disk
-                  </span>
-                )}
-              </MessageFooter>
+
+                  {isSent && file.status === "error" && (
+                    <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive" />
+                  )}
+
+                  {!isSent && file.status === "complete" && (
+                    <span className="text-[10px] font-semibold uppercase tracking-tight text-muted-foreground">
+                      Ready
+                    </span>
+                  )}
+                </MessageFooter>
+              )}
             </MessageContent>
           </Message>
         </div>
       </ContextMenuTrigger>
 
       <ContextMenuContent className="w-56 rounded-2xl overflow-hidden" collisionPadding={16}>
-        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full relative">
+        <div className="flex flex-row gap-1 overflow-x-auto scrollbar-hide py-2 px-2 border-b border-border/20 mb-1 w-full">
           {emojis.map(emoji => (
             <ContextMenuItem
               key={emoji}
@@ -295,11 +276,8 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
           ))}
         </div>
 
-        {file.status === "complete" && !file.streamingMode && (
-          <ContextMenuItem
-            onClick={() => handleDownload()}
-            className="gap-3 mt-1 cursor-pointer"
-          >
+        {file.status === "complete" && (
+          <ContextMenuItem onClick={() => handleDownload()} className="gap-3 mt-1 cursor-pointer">
             <HugeiconsIcon icon={Download01Icon} size={18} />
             <span>Download</span>
           </ContextMenuItem>

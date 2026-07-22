@@ -54,6 +54,9 @@ export class ChatTransferManager {
     
     const payload: ReactionMessagePayload = { type: "reaction_message", messageId, emoji, fromId: myDeviceId };
     this.chatChannel.send(JSON.stringify(payload));
+
+    // Emit locally so the UI updates for the sender
+    this.onReactionReceived(messageId, emoji, myDeviceId);
   }
 
   public close() {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useWebRTC } from "@/context/WebRTCContext"
 import ChatHeader from "@/components/chat/ChatHeader"
@@ -8,6 +8,8 @@ import MessageList from "@/components/chat/MessageList"
 import MessageInput from "@/components/chat/MessageInput"
 import TypingIndicator from "@/components/chat/TypingIndicator"
 import DisconnectBanner from "@/components/chat/DisconnectBanner"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export default function ChatPage() {
   const router = useRouter()
@@ -36,6 +38,8 @@ export default function ChatPage() {
   // when the peer is removed from the list on disconnect.
   const cachedPeerName = useRef<string>("Unknown Device")
   const cachedPeerType = useRef<string>("unknown")
+
+  const [isDragging, setIsDragging] = useState(false)
 
   // ─── Guard: redirect if no active connection ───
   useEffect(() => {
@@ -123,6 +127,10 @@ export default function ChatPage() {
 
   const handleFilesSelect = (files: File[]) => {
     files.forEach(file => {
+      if (file.size > 250 * 1024 * 1024) {
+        toast.error(`Cannot transfer ${file.name}. File size exceeds the 250 MB limit.`);
+        return;
+      }
       sendFile(file).catch(err => {
         console.error(`[FILES] Send failed for ${file.name}:`, err)
       })
@@ -137,8 +145,64 @@ export default function ChatPage() {
     sendSystemMessage({ type: "typing_stop" })
   }
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true)
+    }
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true)
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    // Check if we are leaving the actual container window, not just a child element
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    
+    if (!isChannelOpen) return;
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files)
+      handleFilesSelect(files)
+    }
+  }
+
   return (
-    <div className="flex flex-col h-[100dvh] bg-background">
+    <div 
+      className="flex flex-col h-[100dvh] bg-background relative"
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && isChannelOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-xl m-4 pointer-events-none transition-all">
+          <div className="flex flex-col items-center gap-4 text-primary animate-in zoom-in-95 duration-200">
+            <div className="p-4 rounded-full bg-primary/20">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <p className="text-xl font-semibold tracking-tight">Drop files to send</p>
+          </div>
+        </div>
+      )}
+
       <ChatHeader
         peerName={peerName}
         peerType={peerType}

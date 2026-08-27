@@ -47,11 +47,11 @@ export default function MessageList({ messages, peerName }: MessageListProps) {
   }
 
   return (
-    <div className="flex-1 relative overflow-hidden bg-background">
+    <div className="flex-1 min-h-0 relative overflow-hidden bg-background">
       <MessageScrollerProvider autoScroll>
-        <MessageScroller className="py-2">
+        <MessageScroller>
           <MessageScrollerViewport>
-            <MessageScrollerContent className="px-4">
+            <MessageScrollerContent className="px-4 py-2">
               {messages.map((msg, index) => {
                 const prevMsg = messages[index - 1]
                 const nextMsg = messages[index + 1]

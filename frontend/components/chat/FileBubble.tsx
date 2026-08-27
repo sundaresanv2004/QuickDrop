@@ -94,7 +94,10 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
     const a = document.createElement("a")
     a.href = url
     a.download = file.name
+    a.target = "_blank"
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
 
     if (!file.objectUrl && url) {
       setTimeout(() => URL.revokeObjectURL(url!), 1000)

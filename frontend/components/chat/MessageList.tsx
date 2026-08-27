@@ -63,7 +63,7 @@ export default function MessageList({ messages, peerName }: MessageListProps) {
                   <MessageScrollerItem
                     key={msg.id}
                     messageId={msg.id}
-                    scrollAnchor={msg.direction === "sent"}
+                    scrollAnchor={index === messages.length - 1}
                   >
                     {showDateSep && (
                       <Marker variant="separator" className="my-4">

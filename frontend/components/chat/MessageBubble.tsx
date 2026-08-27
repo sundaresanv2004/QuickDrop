@@ -4,7 +4,6 @@ import { ChatMessage, LinkPreview } from "@/types/chat"
 import LinkEmbed from "./LinkEmbed"
 import { cn, formatTimestamp } from "@/lib/utils"
 import { useWebRTC } from "@/context/WebRTCContext"
-import { useWebRTCBridge } from "@/hooks/useWebRTCBridge"
 import { useState, useEffect } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { SmileIcon, Copy01Icon, Link01Icon } from "@hugeicons/core-free-icons"
@@ -32,7 +31,7 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ message, isLastInGroup = true, peerName }: MessageBubbleProps) {
-  const { sendReaction, myDeviceId } = useWebRTC()
+  const { sendReaction, myDeviceId, updateMessage } = useWebRTC()
   const [showPicker, setShowPicker] = useState(false)
 
   if (message.type !== "text") return null
@@ -80,7 +79,7 @@ export default function MessageBubble({ message, isLastInGroup = true, peerName 
     </Popover>
   )
 
-  const { updateMessage } = useWebRTCBridge()
+
 
   // Retroactive link preview fetch
   useEffect(() => {

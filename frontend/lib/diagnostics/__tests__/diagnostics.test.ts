@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { describeCandidate } from "../connection-log"
+import { createConnectionLog, describeCandidate, explainConnectionFailure } from "../connection-log"
 import { fillPattern, matchesPattern } from "../pattern"
 import { createResult, markInterrupted } from "../results"
 
@@ -18,6 +18,27 @@ describe("describeCandidate", () => {
     expect(describeCandidate(null)).toBe("unknown")
     expect(describeCandidate("")).toBe("unknown")
     expect(describeCandidate("not a candidate")).toBe("unknown")
+  })
+})
+
+describe("explainConnectionFailure", () => {
+  const log = (local: number, remote: number) => ({
+    ...createConnectionLog("initiator"),
+    localCandidates: local ? { "host-mdns": local } : {},
+    remoteCandidates: remote ? { "host-mdns": remote } : {},
+  })
+
+  it("points at the other device when it never responded", () => {
+    expect(explainConnectionFailure(null)).toContain("didn't respond")
+    expect(explainConnectionFailure(log(1, 0))).toContain("didn't respond")
+  })
+
+  it("points at this device when it found no route", () => {
+    expect(explainConnectionFailure(log(0, 0))).toContain("couldn't find a network route")
+  })
+
+  it("points at the network when both devices responded", () => {
+    expect(explainConnectionFailure(log(1, 1))).toContain("Guest networks")
   })
 })
 

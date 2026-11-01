@@ -220,6 +220,7 @@ export default function DiagnosticsPanel() {
                 ? `${connection.selectedPair.local} ↔ ${connection.selectedPair.remote} (${connection.selectedPair.protocol})`
                 : "None"}
             />
+            <Row label="Connection restarts" value={String(connection.iceRestarts ?? 0)} />
             <Row label="Largest message" value={connection.maxMessageSize ? formatFileSize(connection.maxMessageSize) : "Unknown"} />
           </>
         ) : (

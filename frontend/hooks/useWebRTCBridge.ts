@@ -89,11 +89,11 @@ export function useWebRTCBridge() {
       toast.info(`Request from ${peerName} was cancelled`);
     });
     const unsubConnErr = webRTCManager.on('connection_error', (msg) => {
-      toast.error(`Connection failed: ${msg}`);
+      toast.error(`Couldn't connect. ${msg}`, { duration: 10000 });
     });
     const unsubPeerLeft = webRTCManager.on('peer_left', (id) => {
-      if (id === webRTCManager.targetPeerId && (webRTCManager.status === "connected" || webRTCManager.status === "connecting")) {
-        toast.warning("Peripheral peer disconnected.");
+      if (id === webRTCManager.targetPeerId && (webRTCManager.status === "connecting" || webRTCManager.status === "reconnecting")) {
+        toast.warning("The other device disconnected.");
       }
       setPeers([...webRTCManager.peers]);
     });

@@ -8,7 +8,7 @@ export default defineConfig({
   timeout: 10 * 60 * 1000,
   workers: 1,
   reporter: "list",
-  use: { baseURL: "http://localhost:3001", acceptDownloads: true },
+  use: { baseURL: "http://localhost:3001", acceptDownloads: true, actionTimeout: 15000 },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },

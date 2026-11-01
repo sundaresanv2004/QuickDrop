@@ -8,6 +8,8 @@ export interface BaseMessage { type: MessageType }
 export interface WelcomeMessage extends BaseMessage {
   type: "welcome"
   device_id: string
+  session_secret?: string
+  resumed?: boolean
   room?: RoomInfo
 }
 export interface RoomInfo {

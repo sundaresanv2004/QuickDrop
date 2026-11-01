@@ -46,6 +46,7 @@ export default function ChatPage() {
     if (
       connectionStatus !== "connected" &&
       connectionStatus !== "connecting" &&
+      connectionStatus !== "reconnecting" &&
       connectionStatus !== "disconnected" &&
       connectionStatus !== "left"
     ) {

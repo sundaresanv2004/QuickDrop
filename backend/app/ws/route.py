@@ -7,6 +7,7 @@ import time
 import socket
 import ipaddress
 import hashlib
+import secrets
 
 # ---------------------------------------------------------------------------
 # IP Utilities
@@ -107,13 +108,14 @@ def _record_connect_request(device_id: str):
 # ---------------------------------------------------------------------------
 
 # Stores asyncio Events that the message loop sets when a pong arrives.
-# Format: { device_id: asyncio.Event }
-_pending_pongs: dict[str, asyncio.Event] = {}
+# Keyed per socket because a device can move to a new socket on reconnect.
+# Format: { id(websocket): asyncio.Event }
+_pending_pongs: dict[int, asyncio.Event] = {}
 
 HEARTBEAT_INTERVAL = 30  # seconds between pings
 PONG_TIMEOUT = 10        # seconds to wait for a pong before declaring ghost
 
-async def _heartbeat_loop(websocket: WebSocket, device_id: str):
+async def _heartbeat_loop(websocket: WebSocket):
     """
     Runs as a background task for each connected device.
     Sends a ping every HEARTBEAT_INTERVAL seconds.
@@ -128,7 +130,7 @@ async def _heartbeat_loop(websocket: WebSocket, device_id: str):
             # Create the event BEFORE sending ping so the pong handler can
             # set it even if the pong arrives immediately.
             pong_event = asyncio.Event()
-            _pending_pongs[device_id] = pong_event
+            _pending_pongs[id(websocket)] = pong_event
 
             try:
                 await websocket.send_json({"type": "ping"})
@@ -140,7 +142,7 @@ async def _heartbeat_loop(websocket: WebSocket, device_id: str):
                 await asyncio.wait_for(pong_event.wait(), timeout=PONG_TIMEOUT)
             except asyncio.TimeoutError:
                 # No pong received — ghost connection. Force close.
-                print(f"[Heartbeat] Ghost detected: {device_id}. Closing.")
+                print("[Heartbeat] Ghost connection detected. Closing.")
                 try:
                     await websocket.close()
                 except Exception:
@@ -149,13 +151,67 @@ async def _heartbeat_loop(websocket: WebSocket, device_id: str):
     except asyncio.CancelledError:
         pass
     finally:
-        _pending_pongs.pop(device_id, None)
+        _pending_pongs.pop(id(websocket), None)
 
 # ---------------------------------------------------------------------------
 # WebSocket Route
 # ---------------------------------------------------------------------------
 
 router = APIRouter()
+
+FIRST_MESSAGE_TIMEOUT = 10       # seconds a new socket has to identify itself
+RECONNECT_GRACE_SECONDS = 30     # seconds a dropped device keeps its session
+REPLACED_CLOSE_CODE = 4001       # tells an older socket a newer one took over
+
+_expiry_tasks: dict[str, asyncio.Task] = {}
+
+async def _remove_device(device_id: str):
+    room_id = manager.device_rooms.get(device_id)
+    _connect_request_timestamps.pop(device_id, None)
+    _expiry_tasks.pop(device_id, None)
+    manager.disconnect(device_id)
+    if room_id:
+        await manager.broadcast_room(room_id, {
+            "type": "peer_left",
+            "device_id": device_id
+        }, exclude_id=device_id)
+
+async def _expire_device(device_id: str):
+    await asyncio.sleep(RECONNECT_GRACE_SECONDS)
+    if manager.is_waiting_to_reconnect(device_id):
+        await _remove_device(device_id)
+
+async def _open_session(websocket: WebSocket, first: dict, ip: str, room_id: str) -> tuple[str, bool]:
+    """Resumes the device's earlier session if it proves ownership, or starts a new one."""
+    device_name = first["device_name"]
+    device_type = first.get("device_type", "unknown")
+    resume_id = first.get("resume_device_id")
+
+    if not manager.can_resume(resume_id, first.get("resume_secret")):
+        device_id = str(uuid.uuid4())
+        await manager.connect(websocket, device_id, device_name, ip, room_id=room_id,
+                              device_type=device_type, session_secret=secrets.token_urlsafe(32))
+        return device_id, False
+
+    expiry = _expiry_tasks.pop(resume_id, None)
+    if expiry:
+        expiry.cancel()
+
+    previous_socket, previous_room = manager.resume(resume_id, websocket, ip, room_id)
+    manager.devices[resume_id].device_name = device_name
+    manager.devices[resume_id].device_type = device_type
+
+    if previous_socket is not None:
+        try:
+            await previous_socket.close(code=REPLACED_CLOSE_CODE)
+        except Exception:
+            pass
+    if previous_room and previous_room != room_id:
+        await manager.broadcast_room(previous_room, {
+            "type": "peer_left",
+            "device_id": resume_id
+        }, exclude_id=resume_id)
+    return resume_id, True
 
 @router.websocket("/connect")
 async def signaling_endpoint(websocket: WebSocket):
@@ -175,26 +231,51 @@ async def signaling_endpoint(websocket: WebSocket):
         await websocket.close(code=1008, reason="Too many connections from this IP")
         return
 
-    # STEP 2: Accept the connection and register it
+    # STEP 2: Accept the connection
     await websocket.accept()
     _register_connection(ip)
 
-    device_id = str(uuid.uuid4())
     room_id = normalize_ip_to_room(ip)
-    await manager.connect(websocket, device_id, "Unknown", ip, room_id=room_id)
+    device_id = None
+    heartbeat_task = None
+    has_left = False
 
-    # STEP 3: Send Welcome
-    await websocket.send_json({"type": "welcome", "device_id": device_id, "room": describe_room(room_id)})
-
-    # STEP 4: Send current peer list
-    peers = manager.get_room_peers(room_id, exclude_id=device_id)
-    await websocket.send_json({"type": "peer_list", "peers": peers})
-
-    # STEP 5: Start the heartbeat background task
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket, device_id))
-
-    # STEP 6: Main message loop
     try:
+        # STEP 3: The first message identifies the device, so it never appears
+        # to peers without a name and can resume its previous session.
+        first = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=FIRST_MESSAGE_TIMEOUT))
+        if first.get("type") != "register":
+            await websocket.close(code=1008, reason="Expected register")
+            return
+        device_id, resumed = await _open_session(websocket, first, ip, room_id)
+
+        # STEP 4: Send Welcome
+        await websocket.send_json({
+            "type": "welcome",
+            "device_id": device_id,
+            "session_secret": manager.devices[device_id].session_secret,
+            "resumed": resumed,
+            "room": describe_room(room_id),
+        })
+
+        # STEP 5: Send current peer list and anything that arrived while offline
+        peers = manager.get_room_peers(room_id, exclude_id=device_id)
+        await websocket.send_json({"type": "peer_list", "peers": peers})
+        for message in manager.take_pending_messages(device_id):
+            await websocket.send_json(message)
+
+        await manager.broadcast_room(room_id, {
+            "type": "peer_joined",
+            "device_id": device_id,
+            "device_name": manager.devices[device_id].device_name,
+            "device_type": manager.devices[device_id].device_type,
+            "is_busy": manager.devices[device_id].is_busy
+        }, exclude_id=device_id)
+
+        # STEP 6: Start the heartbeat background task
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+
+        # STEP 7: Main message loop
         while True:
             raw = await websocket.receive_text()
             msg = json.loads(raw)
@@ -202,9 +283,13 @@ async def signaling_endpoint(websocket: WebSocket):
 
             # --- Heartbeat: respond to ping ---
             if msg_type == "pong":
-                event = _pending_pongs.get(device_id)
+                event = _pending_pongs.get(id(websocket))
                 if event:
                     event.set()
+
+            elif msg_type == "leave":
+                has_left = True
+                break
 
             elif msg_type == "register":
                 manager.devices[device_id].device_name = msg["device_name"]
@@ -235,23 +320,24 @@ async def signaling_endpoint(websocket: WebSocket):
                     continue
                 _record_connect_request(device_id)
                 msg["from_id"] = device_id
-                await manager.send_to(msg["to"], msg)
+                await manager.send_to(msg["to"], msg, queue_if_offline=True)
 
             elif msg.get("to") is not None:
                 # All other targeted messages (sdp_offer, sdp_answer, ice_candidate, etc.)
                 msg["from_id"] = device_id
-                await manager.send_to(msg["to"], msg)
+                await manager.send_to(msg["to"], msg, queue_if_offline=True)
 
     except Exception:
         pass
     finally:
-        # STEP 7: Clean up everything on disconnect
-        heartbeat_task.cancel()
-        _pending_pongs.pop(device_id, None)
-        _connect_request_timestamps.pop(device_id, None)
+        # STEP 8: A deliberate leave ends the session now. A dropped socket gets
+        # time to reconnect, so a brief network loss doesn't look like leaving.
+        if heartbeat_task:
+            heartbeat_task.cancel()
+        _pending_pongs.pop(id(websocket), None)
         _unregister_connection(ip)
-        manager.disconnect(device_id)
-        await manager.broadcast_room(room_id, {
-            "type": "peer_left",
-            "device_id": device_id
-        }, exclude_id=device_id)
+        if device_id:
+            if has_left:
+                await _remove_device(device_id)
+            elif manager.mark_disconnected(device_id, websocket):
+                _expiry_tasks[device_id] = asyncio.create_task(_expire_device(device_id))

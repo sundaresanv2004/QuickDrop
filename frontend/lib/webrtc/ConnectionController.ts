@@ -16,7 +16,16 @@ export class ConnectionController {
     private onDataChannel: (channel: RTCDataChannel, label: string) => void
   ) {}
 
+  public get isInitiator(): boolean {
+    return this.log?.role === "initiator";
+  }
+
+  public getLog(): ConnectionLog | null {
+    return this.log;
+  }
+
   public init(isInitiator: boolean) {
+    this.closePeerConnection();
     this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     this.log = createConnectionLog(isInitiator ? "initiator" : "responder");
     saveConnectionLog(this.log);
@@ -64,6 +73,15 @@ export class ConnectionController {
     return offer;
   }
 
+  public async restartIce(): Promise<RTCSessionDescriptionInit | null> {
+    if (!this.pc || !this.log) return null;
+    this.log.iceRestarts += 1;
+    saveConnectionLog(this.log);
+    const offer = await this.pc.createOffer({ iceRestart: true });
+    await this.pc.setLocalDescription(offer);
+    return offer;
+  }
+
   public async handleOffer(sdp: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit | null> {
     if (!this.pc) return null;
     await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -80,9 +98,9 @@ export class ConnectionController {
   }
 
   public async handleIceCandidate(candidate: RTCIceCandidateInit) {
-    if (!this.pc) return;
     this.recordCandidate("remoteCandidates", candidate.candidate);
-    if (!this.pc.remoteDescription) {
+    // A candidate can arrive before the offer that created this connection.
+    if (!this.pc || !this.pc.remoteDescription) {
       this.iceCandidateQueue.push(candidate);
       return;
     }
@@ -145,11 +163,18 @@ export class ConnectionController {
     }
   }
 
-  public close() {
+  private closePeerConnection() {
     if (this.pc) {
+      this.pc.ondatachannel = null;
+      this.pc.onicecandidate = null;
+      this.pc.onconnectionstatechange = null;
       this.pc.close();
       this.pc = null;
     }
+  }
+
+  public close() {
+    this.closePeerConnection();
     this.iceCandidateQueue = [];
     this.log = null;
   }

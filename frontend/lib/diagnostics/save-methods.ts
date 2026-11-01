@@ -21,6 +21,16 @@ function clickDownloadLink(href: string, fileName: string) {
   document.body.removeChild(link)
 }
 
+// A link with the download attribute can skip the Service Worker when the page
+// isn't under its scope. Navigating a frame into the scope goes through it.
+function navigateHiddenFrame(href: string) {
+  const frame = document.createElement("iframe")
+  frame.hidden = true
+  frame.src = href
+  document.body.appendChild(frame)
+  setTimeout(() => frame.remove(), BLOB_URL_LIFETIME_MS)
+}
+
 async function activateServiceWorker() {
   const registration = await navigator.serviceWorker.register(SERVICE_WORKER_URL, { scope: SERVICE_WORKER_SCOPE })
   const worker = registration.active ?? registration.waiting ?? registration.installing
@@ -57,7 +67,7 @@ export async function saveTestFile(method: SaveMethod, fileName: string) {
     }
     case "service-worker":
       await activateServiceWorker()
-      clickDownloadLink(`${SERVICE_WORKER_SCOPE}file/${encodeURIComponent(fileName)}`, fileName)
+      navigateHiddenFrame(`${SERVICE_WORKER_SCOPE}file/${encodeURIComponent(fileName)}`)
       return
     case "web-share": {
       const file = await getTestFile(fileName)

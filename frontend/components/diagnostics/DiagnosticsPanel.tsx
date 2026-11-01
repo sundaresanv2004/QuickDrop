@@ -251,6 +251,7 @@ export default function DiagnosticsPanel() {
       <Card title="1. Disk test">
         <p className="text-sm text-muted-foreground">
           Writes a test file to this browser&apos;s private storage, then reads it back and checks every block.
+          Use a normal window, because private windows have far less storage or none at all.
         </p>
         <div className="flex flex-wrap gap-2">
           {TEST_SIZES.map((size) => (

@@ -69,7 +69,10 @@ async function writeAndVerify(name: string, totalBytes: number) {
       const at = i * TEST_BLOCK_BYTES
       fillPattern(block, i)
       const written = sync.write(block, { at })
-      if (written !== TEST_BLOCK_BYTES) throw new Error(`Short write at ${at}: ${written} bytes`)
+      // Chromium can report a full disk through this return value instead of throwing.
+      if (written !== TEST_BLOCK_BYTES) {
+        throw new DOMException(`Storage stopped accepting data at byte ${at} (write returned ${written})`, "StorageWriteError")
+      }
       if ((i + 1) % FLUSH_EVERY_BLOCKS === 0) sync.flush()
       reportProgress("write", at + written, totalBytes)
     }

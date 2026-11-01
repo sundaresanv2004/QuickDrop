@@ -97,8 +97,20 @@ export function useWebRTCBridge() {
       }
       setPeers([...webRTCManager.peers]);
     });
+    const unsubPairJoined = webRTCManager.on('pair_joined', (peer) => {
+      toast.success(`${peer.device_name} is ready`, { description: "Tap it to send a connection request." });
+    });
+    const unsubPairError = webRTCManager.on('pair_error', (reason) => {
+      if (reason === "self") {
+        toast.info("This link is for your other device", { description: "Open it on the device you want to connect." });
+      } else {
+        toast.error("This link has expired or was already used", { description: "Ask for a new QR code or link." });
+      }
+    });
 
     return () => {
+      unsubPairJoined();
+      unsubPairError();
       unsubWs();
       unsubInfo();
       unsubStatus();
@@ -156,7 +168,7 @@ export function useWebRTCBridge() {
     
     // For chat input to know if channel open
     chatChannelOpen: status === "connected"
-  }), [status, webRTCManager.myDeviceId, webRTCManager.myDeviceName, webRTCManager.targetPeerId, webRTCManager.activeChatPeerId]);
+  }), [status, wsConnected, myDeviceName, myDeviceType, webRTCManager.myDeviceId, webRTCManager.targetPeerId, webRTCManager.activeChatPeerId]);
 
   return {
     status,

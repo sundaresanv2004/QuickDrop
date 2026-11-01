@@ -7,6 +7,7 @@ import time
 import socket
 import ipaddress
 import hashlib
+import os
 import secrets
 
 # ---------------------------------------------------------------------------
@@ -28,6 +29,27 @@ def get_local_ip():
         return _cached_local_ip
     except Exception:
         return "127.0.0.1"
+
+FORWARDING_HEADERS = ("cf-connecting-ip", "x-real-ip", "x-forwarded-for")
+_warned_about_proxy = False
+
+def resolve_client_ip(headers, socket_host: str) -> str:
+    """
+    Clients can send any header they like, so one is trusted only when
+    TRUSTED_PROXY_HEADER names the header set by the proxy in front of this server.
+    """
+    global _warned_about_proxy
+    trusted_header = os.getenv("TRUSTED_PROXY_HEADER", "").strip().lower()
+    if trusted_header:
+        value = headers.get(trusted_header)
+        if value:
+            # A proxy appends the address it saw, so anything earlier could be forged.
+            return value.split(",")[-1].strip()
+    elif not _warned_about_proxy and any(headers.get(name) for name in FORWARDING_HEADERS):
+        _warned_about_proxy = True
+        print("[Discovery] Proxy headers found but TRUSTED_PROXY_HEADER is not set. "
+              "Behind a proxy, every device will land in the same room until it is set.")
+    return socket_host
 
 def normalize_ip_to_room(ip_str: str) -> str:
     """
@@ -162,19 +184,27 @@ router = APIRouter()
 FIRST_MESSAGE_TIMEOUT = 10       # seconds a new socket has to identify itself
 RECONNECT_GRACE_SECONDS = 30     # seconds a dropped device keeps its session
 REPLACED_CLOSE_CODE = 4001       # tells an older socket a newer one took over
+PAIR_LINK_LIFETIME_SECONDS = 300 # how long a QR code or link stays usable
 
 _expiry_tasks: dict[str, asyncio.Task] = {}
 
+async def _announce(device_id: str, message_type: str):
+    device = manager.devices[device_id]
+    await manager.notify_visible(device_id, {
+        "type": message_type,
+        "device_id": device_id,
+        "device_name": device.device_name,
+        "device_type": device.device_type,
+        "is_busy": device.is_busy,
+    })
+
 async def _remove_device(device_id: str):
-    room_id = manager.device_rooms.get(device_id)
+    visible = manager.visible_devices(device_id)
     _connect_request_timestamps.pop(device_id, None)
     _expiry_tasks.pop(device_id, None)
     manager.disconnect(device_id)
-    if room_id:
-        await manager.broadcast_room(room_id, {
-            "type": "peer_left",
-            "device_id": device_id
-        }, exclude_id=device_id)
+    for peer_id in visible:
+        await manager.send_to(peer_id, {"type": "peer_left", "device_id": device_id})
 
 async def _expire_device(device_id: str):
     await asyncio.sleep(RECONNECT_GRACE_SECONDS)
@@ -197,7 +227,8 @@ async def _open_session(websocket: WebSocket, first: dict, ip: str, room_id: str
     if expiry:
         expiry.cancel()
 
-    previous_socket, previous_room = manager.resume(resume_id, websocket, ip, room_id)
+    previously_visible = manager.visible_devices(resume_id)
+    previous_socket, _ = manager.resume(resume_id, websocket, ip, room_id)
     manager.devices[resume_id].device_name = device_name
     manager.devices[resume_id].device_type = device_type
 
@@ -206,23 +237,22 @@ async def _open_session(websocket: WebSocket, first: dict, ip: str, room_id: str
             await previous_socket.close(code=REPLACED_CLOSE_CODE)
         except Exception:
             pass
-    if previous_room and previous_room != room_id:
-        await manager.broadcast_room(previous_room, {
-            "type": "peer_left",
-            "device_id": resume_id
-        }, exclude_id=resume_id)
+    for peer_id in previously_visible - manager.visible_devices(resume_id):
+        await manager.send_to(peer_id, {"type": "peer_left", "device_id": resume_id})
     return resume_id, True
+
+async def _join_pair_link(device_id: str, token: str):
+    creator_id, error = manager.redeem_pair_token(token, device_id)
+    if error:
+        await manager.send_to(device_id, {"type": "pair_error", "reason": error})
+        return
+    await manager.send_to(device_id, {"type": "pair_joined", "peer": manager.describe_peer(creator_id, device_id)})
+    await manager.send_to(creator_id, {"type": "pair_joined", "peer": manager.describe_peer(device_id, creator_id)})
 
 @router.websocket("/connect")
 async def signaling_endpoint(websocket: WebSocket):
     # STEP 0: Resolve the client's IP before accepting so we can rate-limit
-    headers = websocket.headers
-    ip = (
-        headers.get("cf-connecting-ip") or
-        headers.get("x-real-ip") or
-        (headers.get("x-forwarded-for") or "").split(",")[0].strip() or
-        websocket.client.host
-    )
+    ip = resolve_client_ip(websocket.headers, websocket.client.host)
     if ip in ("127.0.0.1", "localhost", "::1"):
         ip = get_local_ip()
 
@@ -259,18 +289,11 @@ async def signaling_endpoint(websocket: WebSocket):
         })
 
         # STEP 5: Send current peer list and anything that arrived while offline
-        peers = manager.get_room_peers(room_id, exclude_id=device_id)
-        await websocket.send_json({"type": "peer_list", "peers": peers})
+        await websocket.send_json({"type": "peer_list", "peers": manager.get_visible_peers(device_id)})
         for message in manager.take_pending_messages(device_id):
             await websocket.send_json(message)
 
-        await manager.broadcast_room(room_id, {
-            "type": "peer_joined",
-            "device_id": device_id,
-            "device_name": manager.devices[device_id].device_name,
-            "device_type": manager.devices[device_id].device_type,
-            "is_busy": manager.devices[device_id].is_busy
-        }, exclude_id=device_id)
+        await _announce(device_id, "peer_joined")
 
         # STEP 6: Start the heartbeat background task
         heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
@@ -294,36 +317,37 @@ async def signaling_endpoint(websocket: WebSocket):
             elif msg_type == "register":
                 manager.devices[device_id].device_name = msg["device_name"]
                 manager.devices[device_id].device_type = msg.get("device_type", "unknown")
-                await manager.broadcast_room(room_id, {
-                    "type": "peer_joined",
-                    "device_id": device_id,
-                    "device_name": msg["device_name"],
-                    "device_type": manager.devices[device_id].device_type,
-                    "is_busy": manager.devices[device_id].is_busy
-                }, exclude_id=device_id)
+                await _announce(device_id, "peer_joined")
 
             elif msg_type == "update_status":
-                is_busy = msg.get("is_busy", False)
-                manager.update_device_status(device_id, is_busy)
-                await manager.broadcast_room(room_id, {
-                    "type": "peer_updated",
-                    "device_id": device_id,
-                    "device_name": manager.devices[device_id].device_name,
-                    "device_type": manager.devices[device_id].device_type,
-                    "is_busy": is_busy
-                }, exclude_id=device_id)
+                manager.update_device_status(device_id, msg.get("is_busy", False))
+                await _announce(device_id, "peer_updated")
 
-            elif msg_type == "connect_request":
-                # Rate-limit: drop silently if exceeded
-                if not _check_connect_request_allowed(device_id):
-                    print(f"[RateLimit] connect_request dropped for {device_id}")
-                    continue
-                _record_connect_request(device_id)
-                msg["from_id"] = device_id
-                await manager.send_to(msg["to"], msg, queue_if_offline=True)
+            elif msg_type == "create_pair_link":
+                token = manager.create_pair_token(device_id, PAIR_LINK_LIFETIME_SECONDS)
+                await websocket.send_json({"type": "pair_link", "token": token, "expires_in": PAIR_LINK_LIFETIME_SECONDS})
+
+            elif msg_type == "cancel_pair_link":
+                manager.revoke_pair_tokens(device_id)
+
+            elif msg_type == "join_pair_link":
+                await _join_pair_link(device_id, str(msg.get("token", "")))
 
             elif msg.get("to") is not None:
-                # All other targeted messages (sdp_offer, sdp_answer, ice_candidate, etc.)
+                # Targeted messages only reach devices this one is allowed to see.
+                if not manager.can_relay(device_id, msg["to"]):
+                    continue
+
+                if msg_type == "connect_request":
+                    # Rate-limit: drop silently if exceeded
+                    if not _check_connect_request_allowed(device_id):
+                        print(f"[RateLimit] connect_request dropped for {device_id}")
+                        continue
+                    _record_connect_request(device_id)
+                elif msg_type == "connect_accept":
+                    # Keeps signaling working if either device changes network mid-session.
+                    manager.link(device_id, msg["to"])
+
                 msg["from_id"] = device_id
                 await manager.send_to(msg["to"], msg, queue_if_offline=True)
 

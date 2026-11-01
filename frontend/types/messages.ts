@@ -2,6 +2,7 @@ export type MessageType =
   | "register" | "welcome" | "peer_list" | "peer_joined" | "peer_left" | "peer_updated" | "update_status"
   | "connect_request" | "connect_accept" | "connect_reject" | "connect_cancel"
   | "sdp_offer" | "sdp_answer" | "ice_candidate"
+  | "pair_link" | "pair_joined" | "pair_error"
 
 export interface BaseMessage { type: MessageType }
 
@@ -64,6 +65,23 @@ export interface Peer {
   device_name: string
   device_type: string
   is_busy: boolean
+  is_linked?: boolean
+}
+
+export type PairErrorReason = "invalid" | "self"
+
+export interface PairLinkMessage extends BaseMessage {
+  type: "pair_link"
+  token: string
+  expires_in: number
+}
+export interface PairJoinedMessage extends BaseMessage {
+  type: "pair_joined"
+  peer: Peer
+}
+export interface PairErrorMessage extends BaseMessage {
+  type: "pair_error"
+  reason: PairErrorReason
 }
 
 export interface PeerUpdatedMessage extends BaseMessage {
@@ -77,3 +95,4 @@ export interface PeerUpdatedMessage extends BaseMessage {
 export type WSMessage =
   | WelcomeMessage | PeerListMessage | PeerJoinedMessage | PeerLeftMessage | PeerUpdatedMessage
   | ConnectRequestMessage | ConnectResponseMessage | ConnectCancelMessage | SDPMessage | ICEMessage
+  | PairLinkMessage | PairJoinedMessage | PairErrorMessage

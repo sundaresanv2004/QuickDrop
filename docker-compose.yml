@@ -10,6 +10,8 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
+      - TRUSTED_PROXY_HEADER=${TRUSTED_PROXY_HEADER:-}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 5s

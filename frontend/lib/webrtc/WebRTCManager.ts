@@ -1,5 +1,5 @@
 import { EventEmitter } from './EventEmitter';
-import { Peer, RoomInfo, WSMessage } from '@/types/messages';
+import { PairErrorReason, Peer, RoomInfo, WSMessage } from '@/types/messages';
 import { ChatMessage, SystemPayload, LinkPreview } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
 import { explainConnectionFailure } from '@/lib/diagnostics/connection-log';
@@ -42,6 +42,9 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'file_error': [fileId: string, error: string];
   'typing_state': [isTyping: boolean];
   'room_info': [room: RoomInfo | null];
+  'pair_link': [token: string, expiresInSeconds: number];
+  'pair_joined': [peer: Peer];
+  'pair_error': [reason: PairErrorReason];
 }
 
 export class WebRTCManager extends EventEmitter<WebRTCEvents> {
@@ -65,6 +68,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private fileChannel: RTCDataChannel | null = null;
   private systemChannel: RTCDataChannel | null = null;
   private openChannels = new Set<string>();
+  private pendingPairToken: string | null = null;
 
   // Sub-Managers
   private signaling: SignalingClient;
@@ -232,6 +236,23 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     } catch (err) { console.error("[SDP] Handle offer failed:", err); }
   }
 
+  public createPairLink() {
+    this.signaling.send({ type: "create_pair_link" });
+  }
+
+  public cancelPairLink() {
+    this.signaling.send({ type: "cancel_pair_link" });
+  }
+
+  // A link can open before signaling connects, so it waits for the welcome if needed.
+  public joinPairLink(token: string) {
+    if (this.myDeviceId && this.signaling.wsConnected) {
+      this.signaling.send({ type: "join_pair_link", token });
+    } else {
+      this.pendingPairToken = token;
+    }
+  }
+
   public sendConnectRequest(peerId: string) {
     if (this.status !== "idle") return;
     this.targetPeerId = peerId;
@@ -357,6 +378,22 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         if (msg.resumed || BUSY_STATUSES.includes(this.status)) {
           this.broadcastBusyStatus(BUSY_STATUSES.includes(this.status));
         }
+        if (this.pendingPairToken) {
+          this.signaling.send({ type: "join_pair_link", token: this.pendingPairToken });
+          this.pendingPairToken = null;
+        }
+        break;
+      case "pair_link":
+        this.emit("pair_link", msg.token, msg.expires_in);
+        break;
+      case "pair_joined": {
+        this.peers = [...this.peers.filter((peer) => peer.device_id !== msg.peer.device_id), msg.peer];
+        this.emit("peer_list", this.peers);
+        this.emit("pair_joined", msg.peer);
+        break;
+      }
+      case "pair_error":
+        this.emit("pair_error", msg.reason);
         break;
       case "peer_list":
         this.peers = msg.peers.filter(p => p.device_id !== this.myDeviceId);
@@ -370,6 +407,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           exist.device_type = msg.device_type;
           exist.is_busy = !!msg.is_busy;
         } else {
+          // Renames also arrive as peer_joined, so only new devices are added here.
           this.peers.push({ 
             device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy 
           });

@@ -48,11 +48,15 @@ This file tracks what currently exists in the project, what needs to be improved
 ### Backend
 - [x] **Heartbeat / Ping-Pong:** Detect and clean up "ghost" devices (browsers that closed without a clean disconnect) by implementing a periodic ping/pong check.
 - [x] **Rate limiting:** Prevent abuse by limiting WebSocket connections and `connect_request` messages per IP.
+- [x] **Reconnecting sessions:** A dropped device keeps its identity for 30 seconds, and signaling sent meanwhile is delivered when it returns.
+- [x] **Relay limits:** Targeted messages only reach devices in the same room or linked by a QR code, a link, or an accepted request.
+- [x] **Trusted proxy header:** Only the header named by `TRUSTED_PROXY_HEADER` can set a device's IP.
 
 ### Frontend — Discovery
 - [x] **Device type detection:** Improve accuracy of detecting device type (mobile, tablet, desktop, laptop) from the user agent.
 - [x] **Empty state UX:** Improve the empty state shown when no peers are found (clearer messaging, animation).
 - [x] **Peer bubble animations:** Refine the "device appears" animation when a new peer joins.
+- [x] **Connect another way:** QR code or link for devices that automatic discovery can't find.
 
 ### Frontend — Handshake
 - [x] **Accept / Reject consent flow:** The incoming request modal IS the verification step. Device B must explicitly accept before any connection is established. No codes needed — consent is the security boundary.

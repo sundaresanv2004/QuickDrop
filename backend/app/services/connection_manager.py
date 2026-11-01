@@ -10,6 +10,72 @@ class ConnectionManager:
         self.devices: dict[str, DeviceInfo] = {}    # device_id → DeviceInfo
         self.rooms: dict[str, set[str]] = {}        # room_id → set of device_ids
         self.device_rooms: dict[str, str] = {}      # device_id → room_id
+        self.links: dict[str, set[str]] = {}        # device_id → devices linked across rooms
+        self.pair_tokens: dict[str, tuple[str, float]] = {}  # token → (creator device_id, expiry)
+
+    def create_pair_token(self, device_id: str, lifetime_seconds: float) -> str:
+        """Each device has one active link, so a new token replaces the previous one."""
+        self.revoke_pair_tokens(device_id)
+        token = secrets.token_urlsafe(16)  # 128 bits
+        self.pair_tokens[token] = (device_id, time.monotonic() + lifetime_seconds)
+        return token
+
+    def revoke_pair_tokens(self, device_id: str):
+        for token, (creator_id, _) in list(self.pair_tokens.items()):
+            if creator_id == device_id:
+                del self.pair_tokens[token]
+
+    def redeem_pair_token(self, token: str, joiner_id: str) -> tuple[str | None, str | None]:
+        """Returns (creator_id, None) on success, or (None, reason). A token works once."""
+        creator_id, expires_at = self.pair_tokens.get(token, (None, 0.0))
+        if creator_id is None or time.monotonic() >= expires_at or creator_id not in self.devices:
+            self.pair_tokens.pop(token, None)
+            return None, "invalid"
+        if creator_id == joiner_id:
+            return None, "self"
+        del self.pair_tokens[token]
+        self.link(creator_id, joiner_id)
+        return creator_id, None
+
+    def link(self, first_id: str, second_id: str):
+        self.links.setdefault(first_id, set()).add(second_id)
+        self.links.setdefault(second_id, set()).add(first_id)
+
+    def _unlink_all(self, device_id: str):
+        for other_id in self.links.pop(device_id, set()):
+            others = self.links.get(other_id)
+            if others:
+                others.discard(device_id)
+                if not others:
+                    self.links.pop(other_id, None)
+
+    def can_relay(self, from_id: str, to_id: str) -> bool:
+        if to_id not in self.devices:
+            return False
+        same_room = self.device_rooms.get(from_id) == self.device_rooms.get(to_id)
+        return same_room or to_id in self.links.get(from_id, set())
+
+    def visible_devices(self, device_id: str) -> set[str]:
+        room_id = self.device_rooms.get(device_id)
+        members = self.rooms.get(room_id, set()) if room_id else set()
+        return (members | self.links.get(device_id, set())) - {device_id}
+
+    def describe_peer(self, peer_id: str, viewer_id: str) -> dict:
+        device = self.devices[peer_id]
+        return {
+            "device_id": peer_id,
+            "device_name": device.device_name,
+            "device_type": device.device_type,
+            "is_busy": device.is_busy,
+            "is_linked": self.device_rooms.get(peer_id) != self.device_rooms.get(viewer_id),
+        }
+
+    def get_visible_peers(self, device_id: str) -> list[dict]:
+        return [self.describe_peer(peer_id, device_id) for peer_id in self.visible_devices(device_id)]
+
+    async def notify_visible(self, device_id: str, message: dict):
+        for peer_id in self.visible_devices(device_id):
+            await self.send_to(peer_id, message)
 
     async def connect(self, websocket: WebSocket, device_id: str, device_name: str, ip: str, room_id: str, device_type: str = "unknown", session_secret: str = ""):
         self.devices[device_id] = DeviceInfo(
@@ -41,6 +107,8 @@ class ConnectionManager:
             return
 
         self._leave_room(device_id)
+        self._unlink_all(device_id)
+        self.revoke_pair_tokens(device_id)
         self.devices.pop(device_id, None)
 
     def can_resume(self, device_id: str | None, session_secret: str | None) -> bool:
@@ -81,18 +149,6 @@ class ConnectionManager:
         pending, device.pending_messages = device.pending_messages, []
         return pending
 
-    def get_room_peers(self, room_id: str, exclude_id: str) -> list[dict]:
-        if room_id not in self.rooms:
-            return []
-        return [
-            {
-                "device_id": d,
-                "device_name": self.devices[d].device_name,
-                "device_type": self.devices[d].device_type,
-                "is_busy": self.devices[d].is_busy
-            }
-            for d in self.rooms[room_id] if d != exclude_id
-        ]
 
     def update_device_status(self, device_id: str, is_busy: bool):
         if device_id in self.devices:
@@ -112,12 +168,5 @@ class ConnectionManager:
             await device.websocket.send_json(message)
         except Exception:
             pass
-
-    async def broadcast_room(self, room_id: str, message: dict, exclude_id: str | None = None):
-        if room_id not in self.rooms:
-            return
-        for device_id in list(self.rooms[room_id]):
-            if device_id != exclude_id:
-                await self.send_to(device_id, message)
 
 manager = ConnectionManager()

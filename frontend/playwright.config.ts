@@ -24,5 +24,12 @@ export default defineConfig({
       url: "http://localhost:8000/api/health",
       reuseExistingServer: true,
     },
+    {
+      // Lets tests place devices on separate networks. See e2e/pairing.e2e.ts.
+      command: "uv --directory ../backend run uvicorn app.main:app --port 8010",
+      url: "http://localhost:8010/api/health",
+      reuseExistingServer: false,
+      env: { TRUSTED_PROXY_HEADER: "x-e2e-client-ip" },
+    },
   ],
 })

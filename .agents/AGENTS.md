@@ -19,6 +19,8 @@ Unlike traditional file-sharing tools, QuickDrop enables devices on the same loc
 *   **How it works:** When a browser connects to the WebSocket server, the server reads its public IP and groups it into a "room" with all other connected browsers sharing that same IP.
 *   **Security mitigation:** The **Accept / Reject** modal on the receiving device. No PIN. No room code. Consent is the security layer.
 *   **IPv6 handling:** Group by the `/64` prefix so all devices on the same local network (which share a prefix) land in the same room even on IPv6.
+*   **Fallback:** Public IP matching can't see a device using iCloud Private Relay, a VPN, or a different IP version. **Connect another way** offers a QR code or link holding a single-use, 5-minute token. It only makes two devices visible to each other, and Accept / Reject still applies.
+*   **Client IP:** The server trusts only the header named by `TRUSTED_PROXY_HEADER`, because clients can forge any other.
 
 ### Layer 2 — Signaling (WebSocket Handshake)
 This layer only exists to help two browsers "find" each other. Once done, it steps aside.
@@ -48,7 +50,7 @@ Once the handshake completes, all data flows **directly browser-to-browser**. Th
 ---
 
 ## Agent Instructions
-- **Preserve the Magic:** Never suggest adding PINs, Room Codes, or manual IP entry for the primary discovery flow. The goal is automatic, zero-friction discovery using IP matching.
+- **Preserve the Magic:** Never suggest adding PINs, Room Codes, or manual IP entry for the primary discovery flow. The goal is automatic, zero-friction discovery using IP matching. The QR code or link is an approved fallback only, and must stay optional and secondary.
 - **Rely on Consent for Security:** The Accept/Reject modal is the primary defense against spam and accidental connections. Ensure this flow remains robust.
 - **Peer-to-Peer First:** Always prioritize WebRTC direct connections. Keep the backend as "dumb" and lightweight as possible. It should only handle signaling, never data proxying.
 - **Backend Constraints:** The backend must never store any messages or files, see file contents, or proxy file data. It strictly groups devices and relays WebRTC signaling.

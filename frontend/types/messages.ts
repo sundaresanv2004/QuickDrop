@@ -8,6 +8,11 @@ export interface BaseMessage { type: MessageType }
 export interface WelcomeMessage extends BaseMessage {
   type: "welcome"
   device_id: string
+  room?: RoomInfo
+}
+export interface RoomInfo {
+  ip_version: 4 | 6
+  hint: string
 }
 export interface PeerListMessage extends BaseMessage {
   type: "peer_list"

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Activity01Icon, Time02Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons"
 import Link from "next/link"
+import DiagnosticsPanel from "@/components/diagnostics/DiagnosticsPanel"
 
 interface HealthData {
   status: string;
@@ -97,6 +98,7 @@ export default function HealthPage() {
           </div>
         )}
 
+        <DiagnosticsPanel />
       </div>
     </main>
   );

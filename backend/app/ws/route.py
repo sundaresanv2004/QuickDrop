@@ -6,6 +6,7 @@ import asyncio
 import time
 import socket
 import ipaddress
+import hashlib
 
 # ---------------------------------------------------------------------------
 # IP Utilities
@@ -46,6 +47,16 @@ def normalize_ip_to_room(ip_str: str) -> str:
             if len(parts) >= 4:
                 return ":".join(parts[:4])
         return ip_str
+
+def describe_room(room_id: str) -> dict:
+    """
+    Safe room summary for diagnostics, sent only to the device in that room.
+    Lets two devices compare rooms without displaying an IP address.
+    """
+    return {
+        "ip_version": 6 if ":" in room_id else 4,
+        "hint": hashlib.sha256(room_id.encode()).hexdigest()[:8],
+    }
 
 # ---------------------------------------------------------------------------
 # Rate Limiting — In-Memory (no external dependencies)
@@ -173,7 +184,7 @@ async def signaling_endpoint(websocket: WebSocket):
     await manager.connect(websocket, device_id, "Unknown", ip, room_id=room_id)
 
     # STEP 3: Send Welcome
-    await websocket.send_json({"type": "welcome", "device_id": device_id})
+    await websocket.send_json({"type": "welcome", "device_id": device_id, "room": describe_room(room_id)})
 
     # STEP 4: Send current peer list
     peers = manager.get_room_peers(room_id, exclude_id=device_id)

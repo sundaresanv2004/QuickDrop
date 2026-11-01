@@ -1,5 +1,5 @@
 import { EventEmitter } from './EventEmitter';
-import { Peer, WSMessage } from '@/types/messages';
+import { Peer, RoomInfo, WSMessage } from '@/types/messages';
 import { ChatMessage, SystemPayload, LinkPreview, FileMetaPayload } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
 import { SignalingClient } from './SignalingClient';
@@ -35,6 +35,7 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'file_complete': [fileId: string, objectUrl: string | null];
   'file_error': [fileId: string, error: string];
   'typing_state': [isTyping: boolean];
+  'room_info': [room: RoomInfo | null];
 }
 
 export class WebRTCManager extends EventEmitter<WebRTCEvents> {
@@ -42,6 +43,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   public myDeviceId: string | null = null;
   public myDeviceName: string = 'Unknown Device';
   public myDeviceType: string = 'unknown';
+  public roomInfo: RoomInfo | null = null;
 
   public get wsConnected(): boolean {
     return this.signaling?.wsConnected ?? false;
@@ -280,6 +282,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     switch (msg.type) {
       case "welcome":
         this.myDeviceId = msg.device_id;
+        this.roomInfo = msg.room ?? null;
+        this.emit('room_info', this.roomInfo);
         break;
       case "peer_list":
         this.peers = msg.peers.filter(p => p.device_id !== this.myDeviceId);

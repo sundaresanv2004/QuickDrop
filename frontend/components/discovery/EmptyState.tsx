@@ -1,9 +1,14 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Wifi01Icon } from "@hugeicons/core-free-icons";
+import { QrCodeIcon, Wifi01Icon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
 
-export default function EmptyState() {
+interface EmptyStateProps {
+  onConnectAnotherWay: () => void;
+}
+
+export default function EmptyState({ onConnectAnotherWay }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 h-full px-6 text-center text-muted-foreground animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Animated scanning rings */}
@@ -35,6 +40,18 @@ export default function EmptyState() {
           <span className="font-medium text-foreground/40"> same Wi-Fi</span> and
           has <span className="font-medium text-foreground/40">QuickDrop open</span>.
         </p>
+      </div>
+
+      <div className="relative z-10 mt-4 flex flex-col items-center gap-2 animate-in fade-in duration-700 delay-500 fill-mode-both">
+        <p className="text-xs text-muted-foreground/60">Still not showing up?</p>
+        <Button
+          variant="outline"
+          onClick={onConnectAnotherWay}
+          className="rounded-full h-10 px-4 bg-background/60 backdrop-blur-sm border-border/60 hover:border-primary/30 text-foreground/80"
+        >
+          <HugeiconsIcon icon={QrCodeIcon} size={16} color="currentColor" />
+          Connect another way
+        </Button>
       </div>
     </div>
   );

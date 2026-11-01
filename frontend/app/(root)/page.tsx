@@ -6,13 +6,16 @@ import { useRouter } from "next/navigation"
 import { useWebRTC } from "@/context/WebRTCContext"
 import { getDeviceIcon } from "@/components/discovery/PeerBubble"
 import { generateFullRandomName } from "@/lib/device"
+import { readPairToken } from "@/lib/pair-link"
+import { webRTCManager } from "@/lib/webrtc/WebRTCManager"
 import StatusBar from "@/components/discovery/StatusBar"
 import PeerBubble from "@/components/discovery/PeerBubble"
 import EmptyState from "@/components/discovery/EmptyState"
+import ConnectAnotherWayDialog from "@/components/discovery/ConnectAnotherWayDialog"
 import RequestingModal from "@/components/handshake/RequestingModal"
 import IncomingRequestModal from "@/components/handshake/IncomingRequestModal"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Loading03Icon, PencilEdit02Icon, CheckmarkCircle01Icon, Cancel01Icon, ShuffleIcon } from "@hugeicons/core-free-icons"
+import { Loading03Icon, PencilEdit02Icon, CheckmarkCircle01Icon, Cancel01Icon, ShuffleIcon, QrCodeIcon } from "@hugeicons/core-free-icons"
 import { Input } from "@/components/ui/input"
 import {
   Tooltip,
@@ -100,6 +103,25 @@ export default function DiscoveryPage() {
     prevPeersRef.current = peers
   }, [peers])
 
+  const [pairDialogOpen, setPairDialogOpen] = useState(false)
+  const openPairDialog = () => setPairDialogOpen(true)
+  const hasVisiblePeers = peers.some(p => !p.is_busy)
+
+  // Opened from a QR code or link. The token leaves the address bar right away
+  // so it can't be reshared, or reused by a reload.
+  useEffect(() => {
+    const joinFromAddressBar = () => {
+      const token = readPairToken(window.location.hash)
+      if (!token) return
+      window.history.replaceState(null, "", window.location.pathname)
+      webRTCManager.joinPairLink(token)
+    }
+    joinFromAddressBar()
+    // A link pasted into a tab already on this page only changes the fragment.
+    window.addEventListener("hashchange", joinFromAddressBar)
+    return () => window.removeEventListener("hashchange", joinFromAddressBar)
+  }, [])
+
   const [isEditingName, setIsEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState("")
 
@@ -154,10 +176,23 @@ export default function DiscoveryPage() {
       {/* Floating status badge — bottom right */}
       <StatusBar isConnected={wsConnected} />
 
+      {/* The empty state has its own button for this — bottom left */}
+      {hasVisiblePeers && (
+        <button
+          type="button"
+          onClick={openPairDialog}
+          aria-label="Connect another way"
+          className="fixed bottom-6 left-6 z-50 flex h-[26px] items-center gap-1.5 rounded-full border border-border/50 bg-background/60 px-2 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer sm:px-3"
+        >
+          <HugeiconsIcon icon={QrCodeIcon} size={14} color="currentColor" />
+          <span className="hidden sm:inline">Connect another way</span>
+        </button>
+      )}
+
       {/* Peer area */}
       <div className="flex flex-wrap justify-center gap-6 px-4 py-8 flex-1 content-center overflow-hidden">
         {peers.filter(p => !p.is_busy).length === 0 && leavingPeers.length === 0 ? (
-          <EmptyState />
+          <EmptyState onConnectAnotherWay={openPairDialog} />
         ) : (
           <>
             {/* Active peers — animate in */}
@@ -276,6 +311,11 @@ export default function DiscoveryPage() {
 
       <RequestingModal />
       <IncomingRequestModal />
+      {/* Steps aside for an incoming request, which needs the person's attention first. */}
+      <ConnectAnotherWayDialog
+        open={pairDialogOpen && connectionStatus === "idle"}
+        onOpenChange={setPairDialogOpen}
+      />
 
       {/* Pulse wave keyframes */}
       <style jsx>{`

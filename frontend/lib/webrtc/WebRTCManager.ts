@@ -1,11 +1,16 @@
 import { EventEmitter } from './EventEmitter';
-import { Peer, WSMessage } from '@/types/messages';
-import { ChatMessage, SystemPayload, LinkPreview, FileMetaPayload } from '@/types/chat';
+import { PairErrorReason, Peer, RoomInfo, WSMessage } from '@/types/messages';
+import { ChatMessage, SystemPayload, LinkPreview } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
+import { explainConnectionFailure } from '@/lib/diagnostics/connection-log';
 import { SignalingClient } from './SignalingClient';
 import { ConnectionController } from './ConnectionController';
+import { ConnectionWatchdog } from './ConnectionWatchdog';
 import { ChatTransferManager } from './ChatTransferManager';
 import { FileTransferManager } from './FileTransferManager';
+
+const REQUIRED_CHANNELS = ["chat", "files", "system"];
+const BUSY_STATUSES: ConnectionStatus[] = ["connecting", "connected", "reconnecting", "requesting", "receiving"];
 
 export type ConnectionStatus =
   | "idle"
@@ -13,6 +18,7 @@ export type ConnectionStatus =
   | "receiving"
   | "connecting"
   | "connected"
+  | "reconnecting"
   | "rejected"
   | "disconnected"
   | "left";
@@ -35,6 +41,10 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'file_complete': [fileId: string, objectUrl: string | null];
   'file_error': [fileId: string, error: string];
   'typing_state': [isTyping: boolean];
+  'room_info': [room: RoomInfo | null];
+  'pair_link': [token: string, expiresInSeconds: number];
+  'pair_joined': [peer: Peer];
+  'pair_error': [reason: PairErrorReason];
 }
 
 export class WebRTCManager extends EventEmitter<WebRTCEvents> {
@@ -42,6 +52,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   public myDeviceId: string | null = null;
   public myDeviceName: string = 'Unknown Device';
   public myDeviceType: string = 'unknown';
+  public roomInfo: RoomInfo | null = null;
 
   public get wsConnected(): boolean {
     return this.signaling?.wsConnected ?? false;
@@ -54,19 +65,42 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   public activeChatPeerId: string | null = null;
 
   private cleanupTimeout: NodeJS.Timeout | null = null;
+  private fileChannel: RTCDataChannel | null = null;
+  private systemChannel: RTCDataChannel | null = null;
+  private openChannels = new Set<string>();
+  private pendingPairToken: string | null = null;
 
   // Sub-Managers
   private signaling: SignalingClient;
   private connection: ConnectionController;
+  private watchdog: ConnectionWatchdog;
   private chatManager: ChatTransferManager;
   private fileManager: FileTransferManager;
 
   constructor() {
     super();
 
+    this.watchdog = new ConnectionWatchdog({
+      onConnectFailed: () => {
+        const message = explainConnectionFailure(this.connection.getLog());
+        this.cleanupConnection();
+        this.emit('connection_error', message);
+      },
+      onReconnecting: () => this.setStatus("reconnecting"),
+      onRestartIce: () => this.restartIce(),
+      onRecovered: () => this.setStatus("connected"),
+      onConnectionLost: () => {
+        this.fileManager.failAllActiveTransfers("Connection lost");
+        this.setStatus("disconnected");
+      },
+    });
+
     // 1. Signaling
     this.signaling = new SignalingClient(
-      (connected) => this.emit('ws_status', connected),
+      (connected) => {
+        this.emit('ws_status', connected);
+        if (connected) this.watchdog.signalingRestored();
+      },
       (msg) => this.handleWsMessage(msg),
       () => {
         if (this.status === "requesting" || this.status === "receiving") {
@@ -84,22 +118,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       },
       (state) => {
         console.log(`[WebRTC] Connection state: ${state}`);
-        if (state === "failed" || state === "closed" || state === "disconnected") {
-          this.fileManager.failAllActiveTransfers("Connection lost or peer disconnected");
-        }
+        this.watchdog.handleState(state);
       },
-      (channel, label) => {
-        if (label === "chat") {
-          this.chatManager.setChannel(channel);
-          channel.onopen = () => this.setStatus("connected");
-        } else if (label === "files") {
-          // Temporarily hold until both are ready
-          this.fileManager.setChannels(channel, (this.fileManager as any).systemChannel || null);
-        } else if (label === "system") {
-          this.fileManager.setChannels((this.fileManager as any).fileChannel || null, channel);
-          channel.onmessage = (event) => this.handleSystemMessage(event.data);
-        }
-      }
+      (channel, label) => this.attachChannel(channel, label)
     );
 
     // 3. Chat Transfer
@@ -154,9 +175,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.status = newStatus;
     this.emit('status', newStatus);
 
-    const wasBusy = ["connecting", "connected", "requesting", "receiving"].includes(oldStatus);
-    const isBusy = ["connecting", "connected", "requesting", "receiving"].includes(newStatus);
-    
+    const wasBusy = BUSY_STATUSES.includes(oldStatus);
+    const isBusy = BUSY_STATUSES.includes(newStatus);
+
     if (wasBusy !== isBusy) {
       this.broadcastBusyStatus(isBusy);
     }
@@ -164,6 +185,72 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
 
   public broadcastBusyStatus(isBusy: boolean) {
     this.signaling.send({ type: "update_status", is_busy: isBusy });
+  }
+
+  private attachChannel(channel: RTCDataChannel, label: string) {
+    if (label === "chat") {
+      this.chatManager.setChannel(channel);
+    } else if (label === "files") {
+      this.fileChannel = channel;
+      this.fileManager.setChannels(channel, this.systemChannel);
+    } else if (label === "system") {
+      this.systemChannel = channel;
+      this.fileManager.setChannels(this.fileChannel, channel);
+      channel.onmessage = (event) => this.handleSystemMessage(event.data);
+    }
+
+    const markOpen = () => {
+      this.openChannels.add(label);
+      if (this.status === "connecting" && REQUIRED_CHANNELS.every((name) => this.openChannels.has(name))) {
+        this.watchdog.channelsReady();
+        this.setStatus("connected");
+      }
+    };
+    // A channel from the other device can already be open by the time it reaches us.
+    if (channel.readyState === "open") markOpen();
+    else channel.addEventListener("open", markOpen, { once: true });
+  }
+
+  private async startOffer(peerId: string) {
+    this.connection.init(true);
+    try {
+      const offer = await this.connection.createOffer();
+      if (offer) this.signaling.send({ type: "sdp_offer", to: peerId, sdp: offer });
+    } catch (err) { console.error("[SDP] Offer failed:", err); }
+  }
+
+  // Only the original offerer restarts, so the two devices never send competing offers.
+  private async restartIce() {
+    const peerId = this.targetPeerId;
+    if (!peerId || !this.connection.isInitiator) return;
+    try {
+      const offer = await this.connection.restartIce();
+      if (offer) this.signaling.send({ type: "sdp_offer", to: peerId, sdp: offer });
+    } catch (err) { console.error("[ICE] Restart failed:", err); }
+  }
+
+  private async answerOffer(peerId: string, sdp: RTCSessionDescriptionInit) {
+    try {
+      const answer = await this.connection.handleOffer(sdp);
+      if (answer) this.signaling.send({ type: "sdp_answer", to: peerId, sdp: answer });
+    } catch (err) { console.error("[SDP] Handle offer failed:", err); }
+  }
+
+  public createPairLink() {
+    this.signaling.send({ type: "create_pair_link" });
+  }
+
+  public cancelPairLink() {
+    this.signaling.send({ type: "cancel_pair_link" });
+  }
+
+  // A link can open before signaling connects, so it waits for the welcome if needed.
+  public joinPairLink(token: string) {
+    if (this.myDeviceId && this.signaling.wsConnected) {
+      this.signaling.send({ type: "join_pair_link", token });
+    } else {
+      this.pendingPairToken = token;
+    }
   }
 
   public sendConnectRequest(peerId: string) {
@@ -182,8 +269,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   public acceptRequest() {
     if (this.status !== "receiving" || !this.incomingRequest) return;
     this.targetPeerId = this.incomingRequest.peerId;
-    const peerId = this.incomingRequest.peerId; 
+    const peerId = this.incomingRequest.peerId;
     this.setStatus("connecting");
+    this.watchdog.startConnecting();
     this.signaling.send({ type: "connect_accept", to: peerId });
     this.incomingRequest = null;
   }
@@ -211,12 +299,8 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   }
 
   public sendSystemMessage(payload: SystemPayload) {
-    // Actually we need to reach the system data channel directly.
-    // The connection controller exposes onDataChannel, but we didn't save the system channel here.
-    // Wait, FileTransferManager holds the systemChannel. Let's delegate to it, or just keep it simple:
-    const channel = (this.fileManager as any).systemChannel;
-    if (channel && channel.readyState === "open") {
-      channel.send(JSON.stringify(payload));
+    if (this.systemChannel?.readyState === "open") {
+      this.systemChannel.send(JSON.stringify(payload));
     }
   }
 
@@ -250,10 +334,14 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   }
 
   private cleanupConnection() {
+    this.watchdog.stop();
     this.chatManager.close();
     this.fileManager.cleanup();
     this.connection.close();
-    
+    this.fileChannel = null;
+    this.systemChannel = null;
+    this.openChannels.clear();
+
     this.setStatus("idle");
     this.incomingRequest = null;
     this.targetPeerId = null;
@@ -271,7 +359,11 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       switch (payload.type) {
         case "typing_start": this.emit("typing_state", true); break;
         case "typing_stop": this.emit("typing_state", false); break;
-        case "bye": this.setStatus("left"); this.emit("typing_state", false); break;
+        case "bye":
+          this.watchdog.stop();
+          this.setStatus("left");
+          this.emit("typing_state", false);
+          break;
       }
     } catch { console.error("Failed to parse system message"); }
   }
@@ -280,6 +372,28 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     switch (msg.type) {
       case "welcome":
         this.myDeviceId = msg.device_id;
+        this.roomInfo = msg.room ?? null;
+        this.emit('room_info', this.roomInfo);
+        // Status changes made while offline never reached the server.
+        if (msg.resumed || BUSY_STATUSES.includes(this.status)) {
+          this.broadcastBusyStatus(BUSY_STATUSES.includes(this.status));
+        }
+        if (this.pendingPairToken) {
+          this.signaling.send({ type: "join_pair_link", token: this.pendingPairToken });
+          this.pendingPairToken = null;
+        }
+        break;
+      case "pair_link":
+        this.emit("pair_link", msg.token, msg.expires_in);
+        break;
+      case "pair_joined": {
+        this.peers = [...this.peers.filter((peer) => peer.device_id !== msg.peer.device_id), msg.peer];
+        this.emit("peer_list", this.peers);
+        this.emit("pair_joined", msg.peer);
+        break;
+      }
+      case "pair_error":
+        this.emit("pair_error", msg.reason);
         break;
       case "peer_list":
         this.peers = msg.peers.filter(p => p.device_id !== this.myDeviceId);
@@ -293,6 +407,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           exist.device_type = msg.device_type;
           exist.is_busy = !!msg.is_busy;
         } else {
+          // Renames also arrive as peer_joined, so only new devices are added here.
           this.peers.push({ 
             device_id: msg.device_id, device_name: msg.device_name, device_type: msg.device_type, is_busy: !!msg.is_busy 
           });
@@ -302,11 +417,20 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       case "peer_left":
         this.peers = this.peers.filter(p => p.device_id !== msg.device_id);
         this.emit("peer_left", msg.device_id);
-        
-        if (this.targetPeerId === msg.device_id) {
-          this.fileManager.failAllActiveTransfers("Peer left the chat");
-          this.setStatus("disconnected");
-          this.targetPeerId = null;
+
+        if (this.incomingRequest?.peerId === msg.device_id) {
+          this.cancelSession();
+        } else if (this.targetPeerId === msg.device_id) {
+          // Losing signaling doesn't end a working direct connection. If the
+          // device is really gone, its "bye" or the watchdog ends the session.
+          if (this.status === "requesting") {
+            this.cancelSession();
+          } else if (this.status !== "connected") {
+            this.watchdog.stop();
+            this.fileManager.failAllActiveTransfers("Peer left the chat");
+            this.setStatus("disconnected");
+            this.targetPeerId = null;
+          }
         }
         break;
       case "peer_updated":
@@ -317,20 +441,17 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         }
         break;
       case "connect_request":
+        // Both devices requested each other. The higher ID accepts and waits,
+        // and the lower ID makes the only offer when that accept arrives.
         if (this.status === "requesting" && this.targetPeerId === msg.from_id) {
           if (this.myDeviceId && this.myDeviceId > msg.from_id) {
             this.setStatus("connecting");
+            this.watchdog.startConnecting();
             this.signaling.send({ type: "connect_accept", to: msg.from_id });
-            this.connection.init(true);
-            (async () => {
-              try {
-                const offer = await this.connection.createOffer();
-                if (offer) this.signaling.send({ type: "sdp_offer", to: msg.from_id, sdp: offer });
-              } catch (err) { console.error("[SDP] Glare offer failed:", err); }
-            })();
           }
           return;
         }
+        if (this.status === "connecting" && this.targetPeerId === msg.from_id) return;
 
         if (this.status !== "idle") {
           this.signaling.send({ type: "connect_reject", to: msg.from_id });
@@ -350,15 +471,10 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         }
         break;
       case "connect_accept":
-        if (this.status === "requesting") {
+        if (this.status === "requesting" && this.targetPeerId === msg.from_id) {
           this.setStatus("connecting");
-          this.connection.init(true);
-          (async () => {
-            try {
-              const offer = await this.connection.createOffer();
-              if (offer) this.signaling.send({ type: "sdp_offer", to: msg.from_id, sdp: offer });
-            } catch (err) { console.error("[SDP] Offer failed:", err); }
-          })();
+          this.watchdog.startConnecting();
+          void this.startOffer(msg.from_id);
         }
         break;
       case "connect_reject":
@@ -371,24 +487,26 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
         }
         break;
       case "sdp_offer":
-        if (this.status !== "connecting" || this.targetPeerId !== msg.from_id) {
-          console.warn("[WebRTC] Ignored sdp_offer outside of flow");
+        if (this.targetPeerId !== msg.from_id) {
+          console.warn("[WebRTC] Ignored sdp_offer from an unexpected device");
           return;
         }
-        this.targetPeerId = msg.from_id;
-        this.setStatus("connecting");
-        (async () => {
-          try {
-            this.connection.init(false);
-            const answer = await this.connection.handleOffer(msg.sdp);
-            if (answer) this.signaling.send({ type: "sdp_answer", to: msg.from_id, sdp: answer });
-          } catch (err) { console.error("[SDP] Handle offer failed:", err); }
-        })();
+        if (this.status === "connecting") {
+          this.connection.init(false);
+          void this.answerOffer(msg.from_id, msg.sdp);
+        } else if (this.status === "connected" || this.status === "reconnecting") {
+          // An ICE restart keeps the same connection and its open channels.
+          void this.answerOffer(msg.from_id, msg.sdp);
+        } else {
+          console.warn("[WebRTC] Ignored sdp_offer outside of flow");
+        }
         break;
       case "sdp_answer":
+        if (this.targetPeerId !== msg.from_id) return;
         this.connection.handleAnswer(msg.sdp).catch(err => console.error("[SDP] Handle answer failed:", err));
         break;
       case "ice_candidate":
+        if (this.targetPeerId !== msg.from_id) return;
         this.connection.handleIceCandidate(msg.candidate).catch(err => console.error("[ICE] Add candidate failed:", err));
         break;
     }

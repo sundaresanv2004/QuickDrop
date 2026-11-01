@@ -3,6 +3,7 @@
 import { HugeiconsIcon } from "@hugeicons/react"
 import { WifiDisconnected01Icon, ArrowLeft01Icon, Logout01Icon } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import type { ConnectionStatus } from "@/context/WebRTCContext"
 
@@ -13,6 +14,20 @@ interface DisconnectBannerProps {
 }
 
 export default function DisconnectBanner({ connectionStatus, peerName, onGoBack }: DisconnectBannerProps) {
+  if (connectionStatus === "reconnecting") {
+    return (
+      <div role="status" className="w-full flex items-center gap-3 px-4 py-3 bg-amber-500/5 border-b border-amber-500/15 animate-in slide-in-from-top duration-300">
+        <Spinner className="shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-semibold leading-tight">Reconnecting…</span>
+          <span className="text-xs text-muted-foreground leading-tight mt-0.5">
+            Keep QuickDrop open. Your chat will continue when the connection returns.
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   if (connectionStatus !== "disconnected" && connectionStatus !== "left") return null
 
   const isLeft = connectionStatus === "left"

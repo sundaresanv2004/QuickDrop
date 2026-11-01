@@ -28,7 +28,8 @@ const statusConfig: Record<ConnectionStatus, {
 }> = {
   connected:    { label: "Live",        dotColor: "bg-emerald-500", pulse: true,  badgeVariant: "success",   subLabel: "End-to-end encrypted"    },
   connecting:   { label: "Connecting",  dotColor: "bg-amber-500",   pulse: true,  badgeVariant: "warning",   subLabel: "Establishing connection..." },
-  disconnected: { label: "Offline",     dotColor: "bg-red-500",     pulse: false, badgeVariant: "danger",    subLabel: "Connection lost"           },
+  reconnecting: { label: "Reconnecting", dotColor: "bg-amber-500",  pulse: true,  badgeVariant: "warning",   subLabel: "Connection interrupted..." },
+  disconnected: { label: "Offline",    dotColor: "bg-red-500",     pulse: false, badgeVariant: "danger",    subLabel: "Connection lost"           },
   rejected:     { label: "Rejected",    dotColor: "bg-red-500",     pulse: false, badgeVariant: "danger",    subLabel: "Connection rejected"       },
   left:         { label: "Offline",     dotColor: "bg-zinc-400",    pulse: false, badgeVariant: "secondary", subLabel: "Peer left the chat"        },
   idle:         { label: "Idle",        dotColor: "bg-zinc-400",    pulse: false, badgeVariant: "secondary", subLabel: "Idle"                      },

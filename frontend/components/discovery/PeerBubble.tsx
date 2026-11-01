@@ -1,6 +1,6 @@
 import { Peer } from "@/types/messages"
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ComputerIcon, SmartPhone01Icon, Tablet01Icon } from "@hugeicons/core-free-icons";
+import { ComputerIcon, Link01Icon, SmartPhone01Icon, Tablet01Icon } from "@hugeicons/core-free-icons";
 
 export function getDeviceIcon(deviceName: string, deviceType: string = "unknown") {
   const type = (deviceType || "").toLowerCase();
@@ -39,6 +39,14 @@ export default function PeerBubble({ peer, onClick, disabled }: PeerBubbleProps)
             className="w-6 h-6 sm:w-7 sm:h-7 text-muted-foreground/60 group-hover:text-primary transition-colors duration-300"
           />
         </div>
+        {peer.is_linked && (
+          <span
+            title="Connected by QR code or link"
+            className="absolute -bottom-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm"
+          >
+            <HugeiconsIcon icon={Link01Icon} size={11} strokeWidth={2.5} color="currentColor" />
+          </span>
+        )}
       </div>
       <span
         className="text-xs font-medium text-foreground/60 group-hover:text-foreground max-w-[130px] truncate text-center transition-colors duration-300 px-1"

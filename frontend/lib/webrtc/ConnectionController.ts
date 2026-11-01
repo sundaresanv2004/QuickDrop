@@ -1,6 +1,14 @@
+import { ConnectionLog, createConnectionLog, describeCandidate, saveConnectionLog } from '@/lib/diagnostics/connection-log';
+
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
+
 export class ConnectionController {
   private pc: RTCPeerConnection | null = null;
   private iceCandidateQueue: RTCIceCandidateInit[] = [];
+  private log: ConnectionLog | null = null;
 
   constructor(
     private onIceCandidate: (candidate: RTCIceCandidateInit) => void,
@@ -8,10 +16,19 @@ export class ConnectionController {
     private onDataChannel: (channel: RTCDataChannel, label: string) => void
   ) {}
 
+  public get isInitiator(): boolean {
+    return this.log?.role === "initiator";
+  }
+
+  public getLog(): ConnectionLog | null {
+    return this.log;
+  }
+
   public init(isInitiator: boolean) {
-    this.pc = new RTCPeerConnection({ 
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] 
-    });
+    this.closePeerConnection();
+    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.log = createConnectionLog(isInitiator ? "initiator" : "responder");
+    saveConnectionLog(this.log);
 
     if (isInitiator) {
       const chat = this.pc.createDataChannel("chat", { ordered: true });
@@ -29,19 +46,21 @@ export class ConnectionController {
       const channel = event.channel;
       if (channel.label === "files") {
         channel.binaryType = "arraybuffer";
-        channel.bufferedAmountLowThreshold = 65536; 
+        channel.bufferedAmountLowThreshold = 65536;
       }
       this.onDataChannel(channel, channel.label);
     };
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
+        this.recordCandidate("localCandidates", event.candidate.candidate);
         this.onIceCandidate(event.candidate.toJSON());
       }
     };
 
     this.pc.onconnectionstatechange = () => {
       if (this.pc) {
+        this.recordState(this.pc.connectionState);
         this.onConnectionStateChange(this.pc.connectionState);
       }
     };
@@ -50,6 +69,15 @@ export class ConnectionController {
   public async createOffer(): Promise<RTCSessionDescriptionInit | null> {
     if (!this.pc) return null;
     const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    return offer;
+  }
+
+  public async restartIce(): Promise<RTCSessionDescriptionInit | null> {
+    if (!this.pc || !this.log) return null;
+    this.log.iceRestarts += 1;
+    saveConnectionLog(this.log);
+    const offer = await this.pc.createOffer({ iceRestart: true });
     await this.pc.setLocalDescription(offer);
     return offer;
   }
@@ -70,8 +98,9 @@ export class ConnectionController {
   }
 
   public async handleIceCandidate(candidate: RTCIceCandidateInit) {
-    if (!this.pc) return;
-    if (!this.pc.remoteDescription) {
+    this.recordCandidate("remoteCandidates", candidate.candidate);
+    // A candidate can arrive before the offer that created this connection.
+    if (!this.pc || !this.pc.remoteDescription) {
       this.iceCandidateQueue.push(candidate);
       return;
     }
@@ -83,20 +112,70 @@ export class ConnectionController {
     const queue = this.iceCandidateQueue;
     if (queue.length === 0) return;
     for (const candidate of queue) {
-      try { 
-        await this.pc.addIceCandidate(new RTCIceCandidate(candidate)); 
-      } catch (err) { 
-        console.error("[ICE] Failed to add queued candidate:", err); 
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("[ICE] Failed to add queued candidate:", err);
       }
     }
     this.iceCandidateQueue = [];
   }
 
-  public close() {
+  private recordCandidate(list: "localCandidates" | "remoteCandidates", candidate?: string | null) {
+    if (!this.log) return;
+    const kind = describeCandidate(candidate);
+    this.log[list][kind] = (this.log[list][kind] ?? 0) + 1;
+    saveConnectionLog(this.log);
+  }
+
+  private recordState(state: RTCPeerConnectionState) {
+    const log = this.log;
+    if (!log) return;
+    log.states.push(state);
+    if (state === "connected" && log.connectedAfterMs === null) {
+      log.connectedAfterMs = Date.now() - log.startedAt;
+      log.maxMessageSize = this.pc?.sctp?.maxMessageSize ?? null;
+      void this.recordSelectedPair(log);
+    }
+    saveConnectionLog(log);
+  }
+
+  private async recordSelectedPair(log: ConnectionLog) {
+    if (!this.pc) return;
+    try {
+      const stats = await this.pc.getStats();
+      const reports = Array.from(stats.values());
+      const transport = reports.find((report) => report.type === "transport" && report.selectedCandidatePairId);
+      const pair = transport
+        ? stats.get(transport.selectedCandidatePairId)
+        : reports.find((report) => report.type === "candidate-pair" && report.nominated && report.state === "succeeded");
+      if (!pair) return;
+      const local = stats.get(pair.localCandidateId);
+      const remote = stats.get(pair.remoteCandidateId);
+      log.selectedPair = {
+        local: local?.candidateType ?? "unknown",
+        remote: remote?.candidateType ?? "unknown",
+        protocol: local?.protocol ?? "unknown",
+      };
+      saveConnectionLog(log);
+    } catch (err) {
+      console.warn("[Diagnostics] Could not read connection stats:", err);
+    }
+  }
+
+  private closePeerConnection() {
     if (this.pc) {
+      this.pc.ondatachannel = null;
+      this.pc.onicecandidate = null;
+      this.pc.onconnectionstatechange = null;
       this.pc.close();
       this.pc = null;
     }
+  }
+
+  public close() {
+    this.closePeerConnection();
     this.iceCandidateQueue = [];
+    this.log = null;
   }
 }

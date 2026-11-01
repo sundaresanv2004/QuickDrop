@@ -125,15 +125,15 @@ export class ConnectionController {
   private async recordSelectedPair(log: ConnectionLog) {
     if (!this.pc) return;
     try {
-      const reports = Array.from((await this.pc.getStats()).values());
-      const byId = new Map(reports.map((report) => [report.id, report]));
+      const stats = await this.pc.getStats();
+      const reports = Array.from(stats.values());
       const transport = reports.find((report) => report.type === "transport" && report.selectedCandidatePairId);
       const pair = transport
-        ? byId.get(transport.selectedCandidatePairId)
+        ? stats.get(transport.selectedCandidatePairId)
         : reports.find((report) => report.type === "candidate-pair" && report.nominated && report.state === "succeeded");
       if (!pair) return;
-      const local = byId.get(pair.localCandidateId);
-      const remote = byId.get(pair.remoteCandidateId);
+      const local = stats.get(pair.localCandidateId);
+      const remote = stats.get(pair.remoteCandidateId);
       log.selectedPair = {
         local: local?.candidateType ?? "unknown",
         remote: remote?.candidateType ?? "unknown",

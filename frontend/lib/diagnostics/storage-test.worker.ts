@@ -1,6 +1,5 @@
 import { fillPattern, matchesPattern, TEST_BLOCK_BYTES } from "./pattern"
-import type { StorageTestRequest, StorageTestResponse } from "./storage-test"
-import { TEST_DIRECTORY } from "./storage-test"
+import { StorageTestRequest, StorageTestResponse, TEST_DIRECTORY } from "./storage-test-protocol"
 
 // createSyncAccessHandle exists only in dedicated workers, so the DOM types omit it.
 interface SyncHandle {
@@ -124,6 +123,7 @@ async function deleteTestFiles() {
 scope.onmessage = async ({ data }) => {
   lastProgressAt = 0
   currentBytes = 0
+  currentPhase = data.kind === "read-file" ? "read" : "write"
   try {
     switch (data.kind) {
       case "probe":

@@ -28,7 +28,7 @@ export function createResult(test: string, sizeBytes: number | null, now: number
 }
 
 export function markInterrupted(results: TestResult[]): TestResult[] {
-  return results.map((result) =>
+  return results.map((result): TestResult =>
     result.status === "running"
       ? { ...result, status: "interrupted", detail: "The page closed or reloaded during this test. iOS may have run out of memory." }
       : result

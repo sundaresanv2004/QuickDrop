@@ -1,16 +1,4 @@
-export const TEST_DIRECTORY = "quickdrop-diagnostics"
-
-export type StorageTestRequest =
-  | { kind: "probe" }
-  | { kind: "write-verify"; name: string; totalBytes: number }
-  | { kind: "read-file"; file: File; verifyPattern: boolean }
-  | { kind: "delete-files" }
-
-export type StorageTestResponse =
-  | { kind: "probe"; syncAccessHandle: boolean }
-  | { kind: "progress"; phase: "write" | "verify" | "read"; bytesDone: number; totalBytes: number }
-  | { kind: "done"; bytes: number; writeMs: number; readMs: number }
-  | { kind: "error"; name: string; message: string; phase: string; bytesDone: number }
+import { StorageTestRequest, StorageTestResponse, TEST_DIRECTORY } from "./storage-test-protocol"
 
 export type StorageTestProgress = Extract<StorageTestResponse, { kind: "progress" }>
 export type StorageTestResult = Extract<StorageTestResponse, { kind: "done" }>

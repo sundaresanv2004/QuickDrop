@@ -61,22 +61,13 @@ export function useWebRTCBridge() {
     });
 
     // File updates
-    const unsubFileProg = webRTCManager.on('file_progress', (fileId, progress) => {
-      setMessages(prev => prev.map(m => 
-        m.id === fileId && m.type === 'file' && m.file 
-          ? { ...m, file: { ...m.file, progress, status: progress === 100 ? 'complete' : m.file.status } } 
-          : m
+    const unsubFileUpdate = webRTCManager.on('file_update', (fileId, changes) => {
+      setMessages(prev => prev.map(m =>
+        m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, ...changes } } : m
       ));
     });
-    const unsubFileComp = webRTCManager.on('file_complete', (fileId, url) => {
-      setMessages(prev => prev.map(m => 
-        m.id === fileId && m.type === 'file' && m.file 
-          ? { ...m, file: { ...m.file, progress: 100, status: 'complete', objectUrl: url ?? m.file.objectUrl } } 
-          : m
-      ));
-    });
-    const unsubFileErr = webRTCManager.on('file_error', (fileId, err) => {
-      setMessages(prev => prev.map(m => m.id === fileId && m.type === 'file' && m.file ? { ...m, file: { ...m.file, status: 'error', statusReason: err } } : m));
+    const unsubFileNotice = webRTCManager.on('file_notice', (message) => {
+      toast.warning(message);
     });
 
     const unsubTyping = webRTCManager.on('typing_state', setIsTyping);
@@ -119,9 +110,8 @@ export function useWebRTCBridge() {
       unsubJoin();
       unsubChat();
       unsubReaction();
-      unsubFileProg();
-      unsubFileComp();
-      unsubFileErr();
+      unsubFileUpdate();
+      unsubFileNotice();
       unsubTyping();
       unsubRejected();
       unsubCancelled();
@@ -163,8 +153,10 @@ export function useWebRTCBridge() {
     sendReaction: (msgId: string, emoji: string) => webRTCManager.sendReaction(msgId, emoji),
     sendSystemMessage: (payload: any) => webRTCManager.sendSystemMessage(payload),
     sendFile: (f: File) => webRTCManager.sendFile(f),
-    acceptLargeFileStream: (id: string) => webRTCManager.acceptLargeFileStream(id),
-    rejectFile: (id: string) => webRTCManager.rejectFile(id),
+    acceptFile: (id: string) => webRTCManager.acceptFile(id),
+    declineFile: (id: string) => webRTCManager.declineFile(id),
+    cancelTransfer: (id: string) => webRTCManager.cancelTransfer(id),
+    getReceivedFile: (id: string) => webRTCManager.getReceivedFile(id),
     
     // For chat input to know if channel open
     chatChannelOpen: status === "connected"

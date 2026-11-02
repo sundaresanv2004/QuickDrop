@@ -1,3 +1,5 @@
+import type { TransferMessage } from "@/lib/transfer/protocol"
+
 // ─── Message Direction ───
 export type MessageDirection = "sent" | "received"
 
@@ -5,7 +7,14 @@ export type MessageDirection = "sent" | "received"
 export type ChatMessageType = "text" | "file"
 
 // ─── File Transfer Status ───
-export type FileStatus = "sending" | "receiving" | "complete" | "error"
+export type FileStatus =
+  | "waiting"          // sent, and waiting for its turn or for the other device to accept
+  | "awaiting_accept"  // received offer, waiting for this person to accept
+  | "sending"
+  | "receiving"
+  | "verifying"
+  | "complete"
+  | "error"
 
 // ─── File Info attached to a file message ───
 export interface FileInfo {
@@ -15,9 +24,8 @@ export interface FileInfo {
   mimeType:  string
   status:    FileStatus
   progress:  number          // 0–100
-  objectUrl: string | null   // set only when status === "complete"
-  streamingMode?: boolean    // true if >= 500MB, used for disk streaming prompts
   statusReason?: string      // e.g. "Declined" or "Network Error"
+  savedToDevice?: boolean    // written straight to a file the person chose
 }
 
 export interface LinkPreview {
@@ -47,19 +55,6 @@ export interface ChatMessage {
   linkPreview?: LinkPreview
 }
 
-// ─── In-progress file being received (stored separately, not in messages) ───
-export interface PendingFileTransfer {
-  meta: {
-    fileId:      string
-    name:        string
-    size:        number
-    mimeType:    string
-    totalChunks: number
-  }
-  chunks:   ArrayBuffer[]
-  received: number            // chunk count received so far
-}
-
 // ─── Payload shapes for DataChannel JSON messages ───
 
 export interface TextMessagePayload {
@@ -70,21 +65,6 @@ export interface TextMessagePayload {
   linkPreview?: LinkPreview
 }
 
-export interface FileMetaPayload {
-  type:        "file_meta"
-  fileId:      string
-  name:        string
-  size:        number
-  mimeType:    string
-  totalChunks: number
-  streamingMode: boolean      // true if >= 500MB
-}
-
-export interface StreamReadyPayload {
-  type: "stream_ready"
-  fileId: string
-}
-
 export interface TypingPayload {
   type: "typing_start" | "typing_stop"
 }
@@ -93,30 +73,11 @@ export interface ByePayload {
   type: "bye"
 }
 
-export interface FileRejectedPayload {
-  type: "file_rejected"
-  fileId: string
-}
-
-export interface PauseTransferPayload {
-  type: "pause_transfer"
-  fileId: string
-}
-
-export interface ResumeTransferPayload {
-  type: "resume_transfer"
-  fileId: string
-}
-
 // Union of all system channel payloads
 export type SystemPayload =
-  | FileMetaPayload
-  | StreamReadyPayload
   | TypingPayload
   | ByePayload
-  | FileRejectedPayload
-  | PauseTransferPayload
-  | ResumeTransferPayload
+  | TransferMessage
 
 export interface ReactionMessagePayload {
   type:      "reaction_message"

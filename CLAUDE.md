@@ -22,7 +22,8 @@ An architecture redesign is in progress on the `architecture-redesign` branch. I
 
 - `backend/app/ws/route.py`: WebSocket signaling, sessions, and pairing.
 - `backend/app/services/connection_manager.py`: devices, rooms, links, and pairing tokens.
-- `frontend/lib/webrtc/`: `WebRTCManager` coordinates signaling, connection, chat, and file classes.
+- `frontend/lib/webrtc/`: `WebRTCManager` coordinates signaling, the connection, chat, and files.
+- `frontend/lib/transfer/`: the file transfer engine, its workers, and storage.
 - `frontend/hooks/useWebRTCBridge.ts`: turns manager events into React state.
 - `frontend/app/(root)/page.tsx`: discovery page. `frontend/app/chat/[peerId]/page.tsx`: chat page. `frontend/app/(root)/health/page.tsx`: server health and device diagnostics.
 
@@ -62,10 +63,11 @@ npm run test:e2e
 
 ## Testing notes
 
+- The test browsers were removed to save about 870 MB. Run `npx playwright install webkit chromium` before the first `npm run test:e2e`, and they can be deleted again from `~/Library/Caches/ms-playwright`.
 - Run `npm run build` before `npm run test:e2e`. The browser tests use the production build, because the security policy and Service Worker behave differently in development.
 - The tests start the frontend on port 3001, which the backend's CORS list allows, and a test backend on port 8010. They reuse a backend already running on port 8000, so that one must be running current code. Port 3001 must be free.
 - Test devices use unique names and addresses, so they can't send requests to real devices, but they can briefly appear in QuickDrop tabs connected to port 8000.
-- `E2E_SIZE_GIB=5 npx playwright test -g 'normal window'` runs the 5 GiB save test.
+- `E2E_SIZE_GIB=5 npx playwright test -g 'normal window'` runs the 5 GiB save test, and `E2E_TRANSFER_GIB=5 npx playwright test transfer -g "a large file intact"` runs real 5 GiB transfers, which takes about 15 minutes.
 - Playwright contexts behave like private windows, so storage tests use a persistent profile.
 - In WebKit runs, the other device is Chromium. Two WebKit peers can't connect in Playwright's build.
-- `eslint` reports older errors in `FileTransferManager.ts`, `WebRTCManager.ts`, `useWebRTCBridge.ts`, and the chat page. New code shouldn't add to them.
+- `eslint` reports older errors in `WebRTCManager.ts`, `useWebRTCBridge.ts`, `FileBubble.tsx`, and the chat page. New code shouldn't add to them.

@@ -34,9 +34,9 @@ This file tracks what currently exists in the project, what needs to be improved
 - [x] Emoji reactions on messages
 - [x] Typing indicators
 - [x] File transfer with chunked sending & flow control
-- [x] Large file streaming mode (>250MB) with manual approval
-- [x] IndexedDB for received file buffering
-- [x] File download from IndexedDB
+- [x] Files up to 5 GB, with explicit approval from 100 MB
+- [x] Received files written to disk as they arrive
+- [x] File download and sharing from disk
 - [x] Busy status (hides device from peers when in session)
 - [x] Chat page with routing (`/chat/[peerId]`)
 - [x] Error & not-found pages
@@ -80,7 +80,7 @@ This file tracks what currently exists in the project, what needs to be improved
 ## 🆕 What Still Needs to Be Built
 
 - [ ] **Transfer history (in-session):** A scrollable log of all files transferred in the current session with status indicators.
-- [ ] **Multi-file send:** Allow users to select and send multiple files at once.
-- [ ] **Drag & drop file sending:** Drop files directly onto the chat window to send them.
+- [x] **Multi-file send:** Allow users to select and send multiple files at once.
+- [x] **Drag & drop file sending:** Drop files directly onto the chat window to send them.
 - [ ] **Clipboard paste to send:** Paste an image from clipboard directly into the chat to send it.
 - [ ] **"Leave session" confirmation:** A proper confirmation dialog before ending a session.

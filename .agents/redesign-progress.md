@@ -15,11 +15,11 @@ Send files up to 5 GB directly between nearby devices, including iPhones, withou
 | 0. Diagnostics | Find out what iPhones can handle | Tools done, **iPhone results missing** | `ddd2f67`, `363039e`, `a6d14f6` |
 | 1. Connection reliability | Keep connections alive, explain failures | Built, **not tested on real devices** | `8e61020` |
 | 2. Discovery fallback | Connect devices that can't find each other | Built, **not tested on real devices** | `3a42993` |
-| 3. Transfer engine | Send large files without lag | Not started | |
-| 4. Storage and saving | Store large files without crashing | Not started, iPhone save method depends on Phase 0 | |
+| 3. Transfer engine | Send large files without lag | Built, **not tested on real devices** | Not committed yet |
+| 4. Storage and saving | Store large files without crashing | Built, **iPhone save method and limit still unproven** | Not committed yet |
 | 5. UI and mobile | Clear, smooth transfers on phones | Not started | |
 
-**Next step:** the owner deploys and field-tests Phases 0 to 2. Then record the results below and start Phase 3 once they confirm.
+**Next step:** the owner deploys and field-tests Phases 0 to 4. Record the results below, set the iPhone save method and size limit, then start Phase 5 once they confirm.
 
 ## Waiting on the owner
 
@@ -29,9 +29,14 @@ Nothing here has been confirmed yet:
 - [ ] Confirm the Docker build works. Docker has never been run during this work, and Vitest needs Node 22.12+ while the Dockerfile uses Node 20. That should only be an install warning, since tests don't run in Docker.
 - [ ] Do devices on the same Wi-Fi appear automatically?
 - [ ] Does an iPhone with Private Relay on appear? If not, does the QR code connect it?
+- [ ] Does the QR code connect devices on **different** networks? On the owner's own Wi-Fi a scan shows the device, but they would usually find each other there anyway, so that doesn't count as tested.
 - [ ] Does the iPhone camera open the link from a real QR code?
 - [ ] Does turning Wi-Fi off and on during a chat show "Reconnecting…" and recover?
 - [ ] Can two iPhones connect to each other? See the risk under Findings.
+- [ ] Send 1, 3, and 5 GB in both directions between an iPhone and a desktop. How far does it get before the tab reloads or fails?
+- [ ] On an iPhone, do the download and share buttons each give a usable file, and where does it end up?
+- [ ] Does the real save dialog work in desktop Chrome? Tests use a stand-in, because they can't operate a native dialog.
+- [ ] How fast are real transfers over Wi-Fi?
 - [ ] Paste the **Copy report** result from `/health` on an iPhone: disk tests at 1, 3, and 5 GB, each save method, and the Photos and Files picker tests.
 
 ## Field test results
@@ -48,6 +53,10 @@ None yet. Record the date, devices, what was tested, and the outcome here.
 - **Multiple files:** sent one at a time, with no ZIP creation, which is an iOS memory risk.
 - **Large files need acceptance:** files of 100 MB or more require an explicit Accept.
 - **No camera permission:** QuickDrop won't request it to expose local addresses, even though one similar project does.
+- **iPhone save method (provisional):** there's no Phase 0 report yet, so phones get both a download button and a share button, and the field test decides. Service Worker saving isn't used, because reports conflict on whether real iOS streams to disk.
+- **Sender waits indefinitely for Accept:** a file over 100 MB has no acceptance timeout, and later files queue behind it.
+- **Memory fallback:** where disk storage is unavailable, files up to 200 MB are held in memory. Larger ones get a clear error.
+- **Leaving ends it:** received files are deleted when this person leaves the chat. Their partner leaving doesn't delete them, so they can still be saved.
 
 **Out of scope:** TURN or any relay, native apps, and resuming after the sender reloads.
 
@@ -61,6 +70,9 @@ None yet. Record the date, devices, what was tested, and the outcome here.
 - **Service Worker downloads:** `<a download>` from a page outside the worker's scope skips the worker. Navigating a hidden iframe into the scope works. Reports conflict on whether real iOS streams these to disk.
 - **Desktop results:** Chromium and desktop WebKit both wrote, verified, and saved 5 GiB intact using a download link and a Service Worker stream. This says nothing about iPhone memory limits.
 - **iPhone-to-iPhone risk:** two WebKit browsers can't connect in Playwright's build, even with plain WebRTC and no QuickDrop code, because neither resolves the other's mDNS address. This may only be a limit of that build, so it needs testing on real devices. WebKit to Chromium connects fine.
+- **Transfer speed is the browser's limit:** the engine reaches 28 to 33 MiB/s on this Mac, and a bare data channel with no QuickDrop code reaches 28 MiB/s between Chromium browsers. Buffer sizes up to 15 MiB and messages up to 256 KB made no real difference. Real Wi-Fi speed is unmeasured.
+- **Desktop 5 GiB results:** every direction between Chromium and desktop WebKit arrived with a matching SHA-256 in about 3 to 4 minutes. The longest page freeze was 208 ms, Chromium page memory stayed around 10 MiB, and total memory for both browsers stayed between roughly 0.4 and 1.3 GB without climbing. The memory figure sums matching processes on one Mac, so treat it as approximate. None of this proves iPhone behavior.
+- **Clean channel close:** a closed data channel still delivers what it had already queued, so a resume can start exactly where the sender had reached.
 - **Reconnect timing:** a device that vanishes stays visible for up to about 70 seconds: up to 40 to detect it, plus the 30-second reconnect window. A normal reload or page close is noticed almost immediately. Pages kept in the back/forward cache can take the longer path.
 
 ## What's built
@@ -84,33 +96,23 @@ None yet. Record the date, devices, what was tested, and the outcome here.
 - `connection_manager.py` holds pairing tokens and links. Messages are only relayed within a room or between linked devices, and an accepted request also creates a link so signaling survives a network change.
 - `resolve_client_ip` trusts only the header named by `TRUSTED_PROXY_HEADER`.
 
+### Phases 3 and 4: Transfer engine and storage
+- `lib/transfer/FileTransferEngine.ts` coordinates files, sends them one at a time, and replaced `FileTransferManager.ts`. `SendSession.ts` and `ReceiveSession.ts` run one file each.
+- `read.worker.ts` reads and checksums 1 MiB blocks and builds the frames. `storage/storage.worker.ts` assembles blocks, checks their CRC32, writes them, and re-reads the whole file at the end. The page only passes data along.
+- `protocol.ts` defines the messages. `file_accept` both starts a transfer and rewinds it to an offset. Frames are tagged with offset and checksum, and anything out of place is dropped. All peer input is validated, including file names and IDs, which become paths here.
+- Flow control: the sender advances only on credit for bytes **on the receiver's disk**, plus `bufferedAmount`. The window is 16 MiB on desktop and 4 MiB on phones.
+- Resume: when all channels reopen, the sender repeats its offers, and the receiver asks to continue from its current block. If channels die for good, `WebRTCManager.restartIce` rebuilds the connection (`rebuild: true` on `sdp_offer`). Damaged blocks are re-requested, up to 3 times.
+- Storage (`storage/`): Chromium desktop saves directly to a chosen file. Other browsers use OPFS sync access handles, then a download or share button. Web Locks protect files in use, and a startup sweep removes abandoned ones and the old IndexedDB database.
+- `FileBubble.tsx` has Accept/Decline, cancel, a progress bar, checking, and save states. Files of 100 MB or more need Accept.
+- Not tested: real iPhones, the real save dialog, real Wi-Fi, a real network loss (tests close the channel), and a phone locking mid-transfer.
+
 ## Remaining work
 
-### Phase 3: Transfer engine
-New code in `frontend/lib/transfer/` replaces `lib/webrtc/FileTransferManager.ts`. This is what removes the current 250 MB limit, together with Phase 4.
-
-- `protocol.ts`: versioned messages, and binary frames tagged with transfer ID and byte offset.
-- `SendSession.ts` and `read.worker.ts`: read 1 MiB blocks in a worker, calculate CRC32, and send up to 64 KB per message, limited by `pc.sctp.maxMessageSize`.
-- `ReceiveSession.ts` and `storage.worker.ts`: batch data, transfer it to a worker, write it by offset, and verify checksums.
-- Flow control: the sender needs credit from bytes the receiver has **written to disk**, and must also respect `bufferedAmount`. Start at 16 MiB on desktop and 4 MiB on mobile, then tune from testing.
-- Resume: after a drop, the receiver reports its verified offset and the sender continues from there, as long as both pages stay alive.
-
-### Phase 4: Storage and saving
-New code in `frontend/lib/transfer/storage/`.
-
-- Chromium desktop: `showSaveFilePicker` from the Accept click, writing directly to that file.
-- Other browsers: an OPFS sync access handle in a dedicated worker, then the save method chosen by the Phase 0 report.
-- Check space with `navigator.storage.estimate()` before accepting, allowing about twice the file size where saving makes a second copy.
-- Call `navigator.storage.persist()`. Stop clearing data on `pagehide`, because that could erase a transfer that can still resume.
-- Delete files after saving or on leaving the session, and sweep old files on startup. Use Web Locks to protect files another tab is using.
-- Delete `IndexedDBManager.ts` and the dead `streamingMode` and `acceptLargeFileStream` paths once the new engine works.
-
 ### Phase 5: UI and mobile
-- A `TransferStore` read with `useSyncExternalStore`, updating at most 4 times per second, so only the active file bubble re-renders.
-- Show speed and time remaining, and states for waiting, paused, reconnecting, verifying, ready to save, and saved, in `FileBubble.tsx` and `FileProgressBar.tsx`.
-- Explicit acceptance for files of 100 MB or more.
+- A `TransferStore` read with `useSyncExternalStore`, so only the active file bubble re-renders. Progress already updates at most 4 times per second, but it still remaps the message list.
+- Show speed and time remaining, and a paused state while reconnecting, in `FileBubble.tsx` and `FileProgressBar.tsx`.
 - Screen Wake Lock where available, a warning before leaving during a transfer, and guidance for iPhone users to keep QuickDrop open and in front.
-- Make the iPhone save action a direct tap, as required by the chosen save method.
+- Settle the iPhone save buttons based on the field test. Both are direct taps today.
 - Recommend Files over Photos for large iPhone videos if Phase 0 shows Photos processes them first.
 - Add `media-src blob:` to `next.config.mjs`, and allow Service Workers only if Phase 0 selects them.
 - Update `README.md` and `todo.md` to match what ships.

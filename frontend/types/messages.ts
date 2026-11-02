@@ -52,6 +52,7 @@ export interface SDPMessage extends BaseMessage {
   from_id: string
   to: string
   sdp: RTCSessionDescriptionInit
+  rebuild?: boolean
 }
 export interface ICEMessage extends BaseMessage {
   type: "ice_candidate"

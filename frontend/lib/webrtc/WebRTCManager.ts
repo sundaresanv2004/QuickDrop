@@ -1,13 +1,13 @@
 import { EventEmitter } from './EventEmitter';
 import { PairErrorReason, Peer, RoomInfo, WSMessage } from '@/types/messages';
-import { ChatMessage, SystemPayload, LinkPreview } from '@/types/chat';
+import { ChatMessage, FileInfo, SystemPayload, LinkPreview } from '@/types/chat';
 import { setDeviceName } from '@/lib/device';
 import { explainConnectionFailure } from '@/lib/diagnostics/connection-log';
 import { SignalingClient } from './SignalingClient';
 import { ConnectionController } from './ConnectionController';
 import { ConnectionWatchdog } from './ConnectionWatchdog';
 import { ChatTransferManager } from './ChatTransferManager';
-import { FileTransferManager } from './FileTransferManager';
+import { FileTransferEngine } from '@/lib/transfer/FileTransferEngine';
 
 const REQUIRED_CHANNELS = ["chat", "files", "system"];
 const BUSY_STATUSES: ConnectionStatus[] = ["connecting", "connected", "reconnecting", "requesting", "receiving"];
@@ -37,9 +37,8 @@ export interface WebRTCEvents extends Record<string, any[]> {
   'chat_message': [message: ChatMessage];
   'reaction': [messageId: string, emoji: string, fromId: string];
   'system_message': [payload: SystemPayload];
-  'file_progress': [fileId: string, progress: number];
-  'file_complete': [fileId: string, objectUrl: string | null];
-  'file_error': [fileId: string, error: string];
+  'file_update': [fileId: string, changes: Partial<FileInfo>];
+  'file_notice': [message: string];
   'typing_state': [isTyping: boolean];
   'room_info': [room: RoomInfo | null];
   'pair_link': [token: string, expiresInSeconds: number];
@@ -65,8 +64,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   public activeChatPeerId: string | null = null;
 
   private cleanupTimeout: NodeJS.Timeout | null = null;
-  private fileChannel: RTCDataChannel | null = null;
-  private systemChannel: RTCDataChannel | null = null;
+  private channels = new Map<string, RTCDataChannel>();
   private openChannels = new Set<string>();
   private pendingPairToken: string | null = null;
 
@@ -75,7 +73,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private connection: ConnectionController;
   private watchdog: ConnectionWatchdog;
   private chatManager: ChatTransferManager;
-  private fileManager: FileTransferManager;
+  private fileEngine: FileTransferEngine;
 
   constructor() {
     super();
@@ -88,9 +86,13 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
       },
       onReconnecting: () => this.setStatus("reconnecting"),
       onRestartIce: () => this.restartIce(),
-      onRecovered: () => this.setStatus("connected"),
+      onRecovered: () => {
+        // A rebuilt connection isn't usable until its channels open, which finishes recovery.
+        if (!this.allChannelsOpen()) return false;
+        this.setStatus("connected");
+      },
       onConnectionLost: () => {
-        this.fileManager.failAllActiveTransfers("Connection lost");
+        this.fileEngine.failAllActiveTransfers("Connection lost");
         this.setStatus("disconnected");
       },
     });
@@ -131,12 +133,11 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     );
 
     // 4. File Transfer
-    this.fileManager = new FileTransferManager(
-      (msg) => this.emit('chat_message', msg),
-      (fileId, progress) => this.emit('file_progress', fileId, progress),
-      (fileId, objectUrl) => this.emit('file_complete', fileId, objectUrl),
-      (fileId, error) => this.emit('file_error', fileId, error)
-    );
+    this.fileEngine = new FileTransferEngine({
+      onMessage: (msg) => this.emit('chat_message', msg),
+      onUpdate: (fileId, changes) => this.emit('file_update', fileId, changes),
+      onNotice: (message) => this.emit('file_notice', message),
+    });
   }
 
   // --- PUBLIC API ---
@@ -187,35 +188,49 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     this.signaling.send({ type: "update_status", is_busy: isBusy });
   }
 
+  private allChannelsOpen() {
+    return REQUIRED_CHANNELS.every((name) => this.openChannels.has(name));
+  }
+
   private attachChannel(channel: RTCDataChannel, label: string) {
+    this.channels.set(label, channel);
+    this.openChannels.delete(label);
+
     if (label === "chat") {
       this.chatManager.setChannel(channel);
-    } else if (label === "files") {
-      this.fileChannel = channel;
-      this.fileManager.setChannels(channel, this.systemChannel);
-    } else if (label === "system") {
-      this.systemChannel = channel;
-      this.fileManager.setChannels(this.fileChannel, channel);
-      channel.onmessage = (event) => this.handleSystemMessage(event.data);
+    } else if (label === "files" || label === "system") {
+      this.fileEngine.setChannels(this.channels.get("files") ?? null, this.channels.get("system") ?? null);
+      if (label === "system") channel.onmessage = (event) => this.handleSystemMessage(event.data);
     }
 
     const markOpen = () => {
+      if (this.channels.get(label) !== channel) return;
       this.openChannels.add(label);
-      if (this.status === "connecting" && REQUIRED_CHANNELS.every((name) => this.openChannels.has(name))) {
+      if (!this.allChannelsOpen()) return;
+
+      if (this.status === "connecting" || this.status === "reconnecting") {
         this.watchdog.channelsReady();
         this.setStatus("connected");
       }
+      this.fileEngine.handleChannelsReady(this.connection.maxMessageBytes);
     };
     // A channel from the other device can already be open by the time it reaches us.
     if (channel.readyState === "open") markOpen();
     else channel.addEventListener("open", markOpen, { once: true });
+
+    // A channel can die for good during a long outage, which an ICE restart can't repair.
+    channel.addEventListener("close", () => {
+      if (this.channels.get(label) !== channel) return;
+      this.openChannels.delete(label);
+      if (this.status === "connected" || this.status === "reconnecting") this.watchdog.handleState("failed");
+    });
   }
 
-  private async startOffer(peerId: string) {
+  private async startOffer(peerId: string, rebuild = false) {
     this.connection.init(true);
     try {
       const offer = await this.connection.createOffer();
-      if (offer) this.signaling.send({ type: "sdp_offer", to: peerId, sdp: offer });
+      if (offer) this.signaling.send({ type: "sdp_offer", to: peerId, sdp: offer, rebuild });
     } catch (err) { console.error("[SDP] Offer failed:", err); }
   }
 
@@ -223,6 +238,13 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private async restartIce() {
     const peerId = this.targetPeerId;
     if (!peerId || !this.connection.isInitiator) return;
+
+    if (!this.allChannelsOpen()) {
+      console.info("[WebRTC] Channels closed, rebuilding the connection");
+      this.openChannels.clear();
+      void this.startOffer(peerId, true);
+      return;
+    }
     try {
       const offer = await this.connection.restartIce();
       if (offer) this.signaling.send({ type: "sdp_offer", to: peerId, sdp: offer });
@@ -299,25 +321,28 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   }
 
   public sendSystemMessage(payload: SystemPayload) {
-    if (this.systemChannel?.readyState === "open") {
-      this.systemChannel.send(JSON.stringify(payload));
-    }
+    const channel = this.channels.get("system");
+    if (channel?.readyState === "open") channel.send(JSON.stringify(payload));
   }
 
   public sendFile(file: File) {
-    return this.fileManager.sendFile(file);
+    return this.fileEngine.sendFile(file);
   }
 
-  public acceptLargeFileStream(fileId: string) {
-    return this.fileManager.acceptLargeFileStream(fileId);
+  public acceptFile(fileId: string) {
+    return this.fileEngine.acceptFile(fileId);
   }
 
-  public rejectFile(fileId: string) {
-    return this.fileManager.rejectFile(fileId);
+  public declineFile(fileId: string) {
+    this.fileEngine.declineFile(fileId);
   }
 
-  public getDownloadUrl(fileId: string, mimeType: string) {
-    return this.fileManager.getDownloadUrl(fileId, mimeType);
+  public cancelTransfer(fileId: string) {
+    this.fileEngine.cancelTransfer(fileId);
+  }
+
+  public getReceivedFile(fileId: string) {
+    return this.fileEngine.getReceivedFile(fileId);
   }
 
   public resetConnection(sessionIdToCleanup?: string) {
@@ -336,10 +361,9 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
   private cleanupConnection() {
     this.watchdog.stop();
     this.chatManager.close();
-    this.fileManager.cleanup();
+    this.fileEngine.cleanup();
     this.connection.close();
-    this.fileChannel = null;
-    this.systemChannel = null;
+    this.channels.clear();
     this.openChannels.clear();
 
     this.setStatus("idle");
@@ -352,15 +376,15 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
     try {
       const payload: SystemPayload = JSON.parse(raw);
       this.emit("system_message", payload);
-      
-      const handledByFile = this.fileManager.handleSystemMessage(payload);
-      if (handledByFile) return;
+
+      if (this.fileEngine.handleControlMessage(payload)) return;
 
       switch (payload.type) {
         case "typing_start": this.emit("typing_state", true); break;
         case "typing_stop": this.emit("typing_state", false); break;
         case "bye":
           this.watchdog.stop();
+          this.fileEngine.failAllActiveTransfers("They left the chat");
           this.setStatus("left");
           this.emit("typing_state", false);
           break;
@@ -427,7 +451,7 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
             this.cancelSession();
           } else if (this.status !== "connected") {
             this.watchdog.stop();
-            this.fileManager.failAllActiveTransfers("Peer left the chat");
+            this.fileEngine.failAllActiveTransfers("Peer left the chat");
             this.setStatus("disconnected");
             this.targetPeerId = null;
           }
@@ -495,7 +519,11 @@ export class WebRTCManager extends EventEmitter<WebRTCEvents> {
           this.connection.init(false);
           void this.answerOffer(msg.from_id, msg.sdp);
         } else if (this.status === "connected" || this.status === "reconnecting") {
-          // An ICE restart keeps the same connection and its open channels.
+          // An ICE restart keeps the same connection and its open channels. A rebuild replaces both.
+          if (msg.rebuild) {
+            this.openChannels.clear();
+            this.connection.init(false);
+          }
           void this.answerOffer(msg.from_id, msg.sdp);
         } else {
           console.warn("[WebRTC] Ignored sdp_offer outside of flow");

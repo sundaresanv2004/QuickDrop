@@ -13,8 +13,15 @@ import {
   Download01Icon,
   AlertCircleIcon,
   SmileIcon,
+  Cancel01Icon,
+  Share01Icon,
+  CheckmarkCircle01Icon,
 } from "@hugeicons/core-free-icons"
 import { useWebRTC } from "@/context/WebRTCContext"
+import { getDeviceType } from "@/lib/device"
+import { canShareFile, downloadFile, shareFile } from "@/lib/transfer/storage/save"
+import { toast } from "sonner"
+import FileProgressBar from "./FileProgressBar"
 import {
   Popover,
   PopoverContent,
@@ -66,7 +73,7 @@ interface FileBubbleProps {
 }
 
 export default function FileBubble({ message, peerName, isLastInGroup }: FileBubbleProps) {
-  const { sendReaction, myDeviceId } = useWebRTC()
+  const { sendReaction, myDeviceId, acceptFile, declineFile, cancelTransfer, getReceivedFile } = useWebRTC()
   const [showPicker, setShowPicker] = useState(false)
 
   if (message.type !== "file" || !message.file) return null
@@ -76,31 +83,27 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
   const reactions = message.reactions || {}
   const hasReactions = Object.keys(reactions).length > 0
 
-  const handleDownload = async () => {
-    let url = file.objectUrl
+  // The finished file is ready immediately, so the browser still counts this as
+  // a direct tap, which iPhones require for both saving and sharing.
+  const receivedFile = !isSent && file.status === "complete" ? getReceivedFile(file.fileId) : null
+  const canSave = !!receivedFile && !file.savedToDevice
+  const canShare =
+    canSave &&
+    ["mobile", "tablet"].includes(getDeviceType()) &&
+    canShareFile(receivedFile, file.name, file.mimeType)
 
-    if (!url) {
-      try {
-        const { webRTCManager } = await import("@/lib/webrtc/WebRTCManager")
-        url = await webRTCManager.getDownloadUrl(file.fileId, file.mimeType)
-      } catch (err) {
-        console.error("[FILES] Failed to fetch full file for download:", err)
-        return
+  const handleDownload = () => {
+    if (receivedFile) downloadFile(receivedFile, file.name)
+  }
+
+  const handleShare = async () => {
+    if (!receivedFile) return
+    try {
+      await shareFile(receivedFile, file.name, file.mimeType)
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        toast.error("Couldn't open the share menu", { description: "Use the download button instead." })
       }
-    }
-
-    if (!url) return
-
-    const a = document.createElement("a")
-    a.href = url
-    a.download = file.name
-    a.target = "_blank"
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-
-    if (!file.objectUrl && url) {
-      setTimeout(() => URL.revokeObjectURL(url!), 1000)
     }
   }
 
@@ -113,12 +116,22 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
 
   // Map our transfer status to the Attachment state prop
   let attachmentState: "idle" | "uploading" | "processing" | "error" | "done" = "idle"
-  if (file.status === "sending") attachmentState = "uploading"
-  else if (file.status === "receiving") attachmentState = "processing"
+  if (file.status === "sending" || file.status === "waiting") attachmentState = "uploading"
+  else if (file.status === "receiving" || file.status === "verifying") attachmentState = "processing"
   else if (file.status === "complete") attachmentState = "done"
   else if (file.status === "error") attachmentState = "error"
 
-  const isInProgress = file.status === "sending" || file.status === "receiving"
+  const isInProgress = ["waiting", "sending", "receiving", "verifying"].includes(file.status)
+  const showProgress = ["sending", "receiving", "verifying"].includes(file.status)
+  const isAwaitingAccept = file.status === "awaiting_accept"
+  const fileSummary = `${getFileMimeLabel(file.mimeType)} · ${formatFileSize(file.size)}`
+
+  let statusText = fileSummary
+  if (file.status === "waiting") statusText = `${formatFileSize(file.size)} · Waiting for ${peerName}`
+  else if (file.status === "verifying") statusText = `${formatFileSize(file.size)} · Checking file ${file.progress}%`
+  else if (showProgress) statusText = `${formatFileSize(file.size)} · ${file.progress}%`
+  else if (file.savedToDevice) statusText = `${formatFileSize(file.size)} · Saved to your device`
+  else if (isSent && file.status === "complete") statusText = `${fileSummary} · Sent`
 
   const msgAlign = isSent ? "end" : "start"
   const senderName = isSent ? "Me" : peerName
@@ -191,16 +204,34 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
 
                     <AttachmentContent>
                       <AttachmentTitle>{file.name}</AttachmentTitle>
-                      <AttachmentDescription>
-                        {getFileMimeLabel(file.mimeType)} · {formatFileSize(file.size)}
-                        {isInProgress && file.progress > 0 && ` · ${file.progress}%`}
-                        {file.status === "error" && ` · ${file.statusReason ?? "Failed"}`}
+                      <AttachmentDescription className={cn(file.status === "error" && "whitespace-normal")}>
+                        {file.status === "error" ? (file.statusReason ?? "Failed") : statusText}
                       </AttachmentDescription>
+                      {showProgress && <FileProgressBar progress={file.progress} className="mt-1.5" />}
                     </AttachmentContent>
 
-                    {/* Download action — only available once fully received */}
-                    {file.status === "complete" && (
+                    {(file.status === "waiting" || file.status === "sending" || file.status === "receiving") && (
                       <AttachmentActions>
+                        <AttachmentAction
+                          aria-label={`Cancel ${file.name}`}
+                          onClick={(e) => { e.stopPropagation(); cancelTransfer(file.fileId) }}
+                        >
+                          <HugeiconsIcon icon={Cancel01Icon} className="size-4" />
+                        </AttachmentAction>
+                      </AttachmentActions>
+                    )}
+
+                    {/* Save actions — only available once fully received and checked */}
+                    {canSave && (
+                      <AttachmentActions>
+                        {canShare && (
+                          <AttachmentAction
+                            aria-label={`Share ${file.name}`}
+                            onClick={(e) => { e.stopPropagation(); void handleShare() }}
+                          >
+                            <HugeiconsIcon icon={Share01Icon} className="size-4" />
+                          </AttachmentAction>
+                        )}
                         <AttachmentAction
                           aria-label={`Download ${file.name}`}
                           onClick={(e) => { e.stopPropagation(); handleDownload() }}
@@ -210,8 +241,16 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
                       </AttachmentActions>
                     )}
 
-                    {/* Full-card trigger for completed files so clicking anywhere downloads */}
-                    {file.status === "complete" && (
+                    {file.savedToDevice && (
+                      <AttachmentActions>
+                        <span className="flex size-8 items-center justify-center text-emerald-600 dark:text-emerald-400">
+                          <HugeiconsIcon icon={CheckmarkCircle01Icon} className="size-4" />
+                        </span>
+                      </AttachmentActions>
+                    )}
+
+                    {/* Full-card trigger for received files so clicking anywhere downloads */}
+                    {canSave && !canShare && (
                       <AttachmentTrigger asChild>
                         <button
                           aria-label={`Download ${file.name}`}
@@ -220,6 +259,22 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
                       </AttachmentTrigger>
                     )}
                   </Attachment>
+
+                  {isAwaitingAccept && (
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => declineFile(file.fileId)}
+                        className="flex-1 rounded-full border-muted-foreground/20 hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
+                      >
+                        Decline
+                      </Button>
+                      <Button size="sm" onClick={() => void acceptFile(file.fileId)} className="flex-1 rounded-full">
+                        Accept
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Reactions cluster — anchored to the Bubble via BubbleReactions */}
                   {hasReactions && (
@@ -251,9 +306,9 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
                     <HugeiconsIcon icon={AlertCircleIcon} size={11} className="text-destructive" />
                   )}
 
-                  {!isSent && file.status === "complete" && (
+                  {file.status === "complete" && (
                     <span className="text-[10px] font-semibold uppercase tracking-tight text-muted-foreground">
-                      Ready
+                      {isSent ? "Sent" : file.savedToDevice ? "Saved" : "Ready"}
                     </span>
                   )}
                 </MessageFooter>
@@ -279,7 +334,7 @@ export default function FileBubble({ message, peerName, isLastInGroup }: FileBub
           ))}
         </div>
 
-        {file.status === "complete" && (
+        {canSave && (
           <ContextMenuItem onClick={() => handleDownload()} className="gap-3 mt-1 cursor-pointer">
             <HugeiconsIcon icon={Download01Icon} size={18} />
             <span>Download</span>

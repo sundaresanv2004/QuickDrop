@@ -20,6 +20,10 @@ export class ConnectionController {
     return this.log?.role === "initiator";
   }
 
+  public get maxMessageBytes(): number {
+    return this.pc?.sctp?.maxMessageSize ?? 0;
+  }
+
   public getLog(): ConnectionLog | null {
     return this.log;
   }

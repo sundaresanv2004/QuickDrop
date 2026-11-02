@@ -9,7 +9,8 @@ import MessageInput from "@/components/chat/MessageInput"
 import TypingIndicator from "@/components/chat/TypingIndicator"
 import DisconnectBanner from "@/components/chat/DisconnectBanner"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
+import { formatFileSize } from "@/lib/utils"
+import { MAX_FILE_BYTES } from "@/lib/transfer/constants"
 
 export default function ChatPage() {
   const router = useRouter()
@@ -128,13 +129,11 @@ export default function ChatPage() {
 
   const handleFilesSelect = (files: File[]) => {
     files.forEach(file => {
-      if (file.size > 250 * 1024 * 1024) {
-        toast.error(`Cannot transfer ${file.name}. File size exceeds the 250 MB limit.`);
+      if (file.size > MAX_FILE_BYTES) {
+        toast.error(`${file.name} is too large`, { description: `The limit is ${formatFileSize(MAX_FILE_BYTES)}.` });
         return;
       }
-      sendFile(file).catch(err => {
-        console.error(`[FILES] Send failed for ${file.name}:`, err)
-      })
+      sendFile(file)
     })
   }
 

@@ -7,7 +7,8 @@ export interface WatchdogHandlers {
   onConnectFailed: () => void;
   onReconnecting: () => void;
   onRestartIce: () => void;
-  onRecovered: () => void;
+  // Returns false if the connection is back but its channels aren't open yet.
+  onRecovered: () => boolean | void;
   onConnectionLost: () => void;
 }
 
@@ -42,10 +43,9 @@ export class ConnectionWatchdog {
     }
 
     if (state === "connected") {
-      if (this.phase === "reconnecting") {
+      if (this.phase === "reconnecting" && this.handlers.onRecovered() !== false) {
         this.stop();
         this.phase = "connected";
-        this.handlers.onRecovered();
       }
       return;
     }
